@@ -517,10 +517,11 @@ const CATS = [
   { name: 'Работа', emoji: '💼', color: '#4772FA', w: 'отчёт отчет отчет звіт созвон дзвінок планёрк планерк митинг мітинг meeting standup стендап дедлайн deadline jira джир confluence конфлюенс документац вики wiki ревью review merge мерж релиз реліз проект клиент клієнт презентац коллег колег офис офіс работ робот тикет ticket спринт sprint бриф brief спек spec api апи код code деплой deploy тест баг bug руководител керівник менеджер manager резюме вакансі собеседован співбесід' },
   { name: 'Покупки', emoji: '🛒', color: '#2BB673', w: 'куп придбат заказать замов order магазин супермаркет ринок рынок продукт молок хлеб хліб яйц сыр сир овощ овоч фрукт мясо м\'ясо курица курк вода воду кофе каву кава чай авокадо банан яблок rozetka розетк ozon wildberries amazon aliexpress алиэкспресс сільпо сильпо атб metro' },
   { name: 'Здоровье', emoji: '💪', color: '#FF7A45', w: 'врач лікар доктор стоматолог зубн терапевт анализ аналіз узи узд таблет витамин вітамін аптек больниц лікарн клиник клінік спортзал залу зале трениров тренув фитнес фітнес бег біг пробежк пробіжк йог пилатес пілатес бассейн басейн растяжк розтяжк массаж масаж спать gym workout run' },
-  { name: 'Дом', emoji: '🏠', color: '#E54D9E', w: 'убрать убрат прибрат уборк прибиран помыть помит вимит стирк прання постират посуд пылесос пропылесос пилосос полить полит цвет квіт ремонт починить полагод лампочк мусор сміття приготов готовить готуват ужин обед обід кота коту котик кошк собак пса корм квартир дом хат' },
+  { name: 'Дом', emoji: '🏠', color: '#E54D9E', w: 'убрать убрат прибрат уборк прибиран помыть помит вимит стирк прання постират посуд пылесос пропылесос пилосос полить полит цвет квіт ремонт починить полагод лампочк мусор сміття приготов готовить готуват ужин обед обід кота коту котик кошк собак пса корм дом хат' },
   { name: 'Финансы', emoji: '💰', color: '#F5A524', w: 'оплат сплат заплат платеж платіж счёт счет рахун налог податок декларац банк перевод переказ кредит депозит коммунал комунал подписк підписк зарплат бюджет инвест інвест страховк страхув монобанк mono privat приват a-bank абанк kolo' },
   { name: 'Учёба', emoji: '📚', color: '#8E4EC6', w: 'курс урок учить вчит выучить вивчит экзамен іспит лекци лекці домашк книг прочитать прочитат читать читат конспект теори автошкол пдр английск англійськ english язык мов универ універ вуз семинар семінар вебинар вебінар' },
   { name: 'Поездки', emoji: '✈️', color: '#12A5B0', w: 'билет квиток отель готел хостел airbnb букинг booking самолёт самолет літак рейс поезд потяг вокзал аэропорт аеропорт визу виза чемодан валіз отпуск відпустк поездк подорож' },
+  { name: 'Поручения', emoji: '📦', color: '#6B7280', w: 'посылк посилк пошт укрпочт укрпошт новой нова нову meest міст доставк забрать забрат отнести віднест отправить відправ химчистк хімчистк ремонт обуви цнап мфц паспортн нотариус нотаріус банкомат' },
   { name: 'Близкие', emoji: '❤️', color: '#E5484D', w: 'мам мама мамі папа тато бабушк бабус дедушк дідус сестр брат друг подруг дружин жена чоловік муж свекр рождени народжен подар поздрав привіта' },
 ];
 const TAGRULES = [
@@ -534,8 +535,9 @@ const TAGRULES = [
   ['уборка', 'убрать прибрат уборк прибиран пылесос пропылесос пилосос помыть вимит стирк прання'],
   ['подарки', 'подар'],
   ['чтение', 'книг прочитать прочитат читать читат'],
-  ['письмо', 'написать написат письмо лист email почт ответить відповіст'],
+  ['письмо', 'написать написат письмо лист email имейл ответить відповіст'],
   ['дедлайн', 'дедлайн deadline сдать здати'],
+  ['посылка', 'посылк посилк укрпочт укрпошт нова пошта meest доставк'],
   ['отчёты', 'отчёт отчет звіт report'],
   ['клиенты', 'клиент клієнт client'],
   ['кино', 'фильм фільм кино кіно сериал серіал movie'],
@@ -554,9 +556,15 @@ function keywordTag(text) {
     const w = raw.replace(/^[-']+|[-']+$/g, '');
     if (w.length < 3 || STOP.has(w) || /^\d+$/.test(w)) continue;
     if (/(ть|ти|ться|тись|тися|чь|ing)$/u.test(w)) continue; // глаголы пропускаем
-    return w;
+    return normTag(w);
   }
   return null;
+}
+// простая нормализация: «посылку» → «посылка», «неделю» → «неделя»
+function normTag(w) {
+  if (w.length > 4 && /[бвгджзклмнпрстфхцчшщ]у$/u.test(w)) return w.slice(0, -1) + 'а';
+  if (w.length > 4 && /[лнрсть]ю$/u.test(w)) return w.slice(0, -1) + 'я';
+  return w;
 }
 const CAT_RE = CATS.map(c => ({ ...c, words: c.w.split(/\s+/) }));
 function scoreWords(text, words) { const t = ' ' + text.toLowerCase(); let n = 0; for (const w of words) if (new RegExp('(?:^|[^\\p{L}])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'iu').test(t)) n++; return n; }
@@ -1143,7 +1151,7 @@ function onField(e) {
     else if (f === 'repeat') t.repeat = e.target.value || null;
     else if (f === 'due') { t.due = e.target.value || null; if (!t.due) t.time = null; delete S.notified[t.id]; }
     else if (f === 'time') { t.time = e.target.value || null; if (t.time && !t.due) { t.due = today(); renderDetail(); } delete S.notified[t.id]; }
-    else { t[f] = e.target.value; if (f === 'title' && e.type === 'change') { const auto = t.autoTags || []; const manual = t.tags.filter(g => !auto.includes(g)); t.autoTags = guessTags(t.title, listById(t.listId)?.name).filter(g => !manual.includes(g)); t.tags = [...manual, ...t.autoTags]; renderDetail(); } }
+    else { t[f] = e.target.value; if (f === 'title' && e.type === 'change') { const auto = t.autoTags || []; const manual = t.tags.filter(g => !auto.includes(g)); if (t.listId === 'inbox') { const g = guessList(t.title); if (g) t.listId = ensureList(g.name, g.emoji, g.color).id; } t.autoTags = guessTags(t.title, listById(t.listId)?.name).filter(g => !manual.includes(g)); t.tags = [...manual, ...t.autoTags]; renderDetail(); } }
     save(); if (e.type === 'change' || f === 'title') render();
     if (e.type === 'change' && ['listId'].includes(f)) renderDetail();
   }
@@ -1427,6 +1435,12 @@ const flush = () => { clearTimeout(saveT); try { localStorage.setItem(KEY, JSON.
 document.addEventListener('visibilitychange', () => { if (document.hidden) return flush(); if (today() !== lastDay) { lastDay = today(); ui.calDay = today(); ui.calMonth = today().slice(0, 8) + '01'; } render(); reminderLoop(); });
 window.addEventListener('pagehide', flush);
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => { });
+if (!S.tagsV3) { S.tagsV3 = 1; S.tagsV2 = 1; S.tasks.forEach(t => {
+  if (t.deleted || t.done || !t.title || t.title.startsWith('👋')) return;
+  if (t.listId === 'inbox') { const g = guessList(t.title); if (g) t.listId = ensureList(g.name, g.emoji, g.color).id; }
+  const auto = t.autoTags || [], manual = (t.tags || []).filter(g => !auto.includes(g));
+  if (!manual.length || auto.length) { t.autoTags = guessTags(t.title, listById(t.listId)?.name).filter(g => !manual.includes(g)); t.tags = [...manual, ...t.autoTags]; }
+}); save(); }
 if (!S.tagsV2) { S.tagsV2 = 1; S.tasks.forEach(t => { if (!t.deleted && !t.done && !(t.tags || []).length && t.title && !t.title.startsWith('👋')) { t.tags = guessTags(t.title, listById(t.listId)?.name); t.autoTags = [...t.tags]; } }); save(); }
 render();
 reminderLoop();
