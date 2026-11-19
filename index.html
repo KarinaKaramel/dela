@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
 <title>dela.</title>
 <meta name="description" content="dela. — задачи, календарь, матрица Эйзенхауэра, помодоро и привычки в одном приложении">
-<meta name="theme-color" content="#F4F5F8">
+<meta name="theme-color" content="#F4F5F8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111215" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -21,14 +23,14 @@
   --ok:#2BB673; --shadow:0 6px 24px rgba(20,24,40,.10); --shadow-sm:0 1px 3px rgba(20,24,40,.08);
   --r:14px; --rail:72px; --side:270px;
   --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
-  color-scheme:light;
+  color-scheme:light dark;
 }
-[data-theme=dark]{
+@media (prefers-color-scheme:dark){:root{
   --bg:#111215; --surface:#1B1C21; --surface2:#24262C; --line:#2E3038;
   --text:#ECEDF0; --text2:#A4A9B4; --text3:#6C717C; --p0:#5C616C;
   --shadow:0 10px 30px rgba(0,0,0,.45); --shadow-sm:0 1px 3px rgba(0,0,0,.4);
   color-scheme:dark;
-}
+}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
   font:15px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Inter,sans-serif;
@@ -419,7 +421,8 @@ function seed() {
   };
 }
 function load() {
-  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version) return migrate(s); } catch (e) { }
+  let raw = null;
+  try { raw = localStorage.getItem(KEY); const s = JSON.parse(raw); if (s && s.version) return migrate(s); } catch (e) { console.error(e); if (raw) { try { localStorage.setItem(KEY + '.backup-' + Date.now(), raw); } catch (x) { } } }
   return seed();
 }
 function migrate(s) {
@@ -533,7 +536,28 @@ const TAGRULES = [
   ['чтение', 'книг прочитать прочитат читать читат'],
   ['письмо', 'написать написат письмо лист email почт ответить відповіст'],
   ['дедлайн', 'дедлайн deadline сдать здати'],
+  ['отчёты', 'отчёт отчет звіт report'],
+  ['клиенты', 'клиент клієнт client'],
+  ['кино', 'фильм фільм кино кіно сериал серіал movie'],
+  ['машина', 'машин автомоб шиномонтаж заправ бензин'],
+  ['питомцы', 'кота коту котик кошк собак пса ветеринар корм'],
+  ['поездка', 'билет квиток отель готел поезд потяг самолёт самолет літак'],
+  ['одежда', 'одежд одяг куртк обув взутт платье сукн'],
+  ['красота', 'маникюр манікюр педикюр стрижк парикмахер перукар косметолог'],
+  ['ремонт', 'ремонт починить полагод сантехник электрик'],
+  ['праздник', 'рождени народжен праздник свято вечеринк'],
+  ['учёба', 'курс урок лекци лекці экзамен іспит домашк'],
 ];
+const STOP = new Set('для на в во и с со к ко по о об от до из за у не а но что это мне меня все всё ещё еще уже надо нужно треба потрібно сделать зробити сходить сходити пойти піти или або та й як как про при без над под через после перед этот эту этого the a an to for of and with in on at my it'.split(' '));
+function keywordTag(text) {
+  for (const raw of text.toLowerCase().split(/[^\p{L}\p{N}'-]+/u)) {
+    const w = raw.replace(/^[-']+|[-']+$/g, '');
+    if (w.length < 3 || STOP.has(w) || /^\d+$/.test(w)) continue;
+    if (/(ть|ти|ться|тись|тися|чь|ing)$/u.test(w)) continue; // глаголы пропускаем
+    return w;
+  }
+  return null;
+}
 const CAT_RE = CATS.map(c => ({ ...c, words: c.w.split(/\s+/) }));
 function scoreWords(text, words) { const t = ' ' + text.toLowerCase(); let n = 0; for (const w of words) if (new RegExp('(?:^|[^\\p{L}])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'iu').test(t)) n++; return n; }
 function guessList(text) {
@@ -541,7 +565,11 @@ function guessList(text) {
   for (const c of CAT_RE) { const sc = scoreWords(text, c.words); if (sc > bs) { bs = sc; best = c; } }
   return best;
 }
-function guessTags(text) { return TAGRULES.filter(([, w]) => scoreWords(text, w.split(/\s+/))).map(([g]) => g).slice(0, 3); }
+function guessTags(text, listName, noKeyword) {
+  const tags = TAGRULES.filter(([, w]) => scoreWords(text, w.split(/\s+/))).map(([g]) => g).slice(0, 3);
+  if (!tags.length && !noKeyword) { const k = keywordTag(text); if (k && k !== (listName || '').toLowerCase()) tags.push(k); }
+  return tags;
+}
 function ensureList(name, emoji, color) {
   let l = S.lists.find(x => x.name.toLowerCase() === name.toLowerCase());
   if (!l) { l = { id: uid(), name, emoji: emoji || '📁', color: color || COLORS[S.lists.length % COLORS.length], auto: true }; S.lists.push(l); }
@@ -1042,7 +1070,7 @@ function qaData() {
     const g = guessList(p.title);
     if (g) { const ex = S.lists.find(l => l.name.toLowerCase() === g.name.toLowerCase()); if (ex) listId = ex.id; else newList = { name: g.name, emoji: g.emoji, color: g.color }; auto = true; }
   }
-  const autoTags = p.title ? guessTags(p.title) : [];
+  const autoTags = p.title ? guessTags(p.title, newList?.name || listById(listId || 'inbox')?.name, p.tags.length > 0) : [];
   return {
     title: p.title,
     due: 'due' in o ? o.due : p.due ?? pre.due ?? null,
@@ -1076,7 +1104,7 @@ function qaSave() {
   let listId = d.listId, created = null;
   if (d.newList) { const had = S.lists.length; const l = ensureList(d.newList.name, d.newList.emoji, d.newList.color); listId = l.id; if (S.lists.length > had) created = l; }
   const { newList, auto, autoTags, ...rest } = d;
-  const t = newTask({ ...rest, listId }); S.tasks.push(t); save();
+  const t = newTask({ ...rest, listId, autoTags: autoTags.filter(g => rest.tags.includes(g)) }); S.tasks.push(t); save();
   $('#qa').value = ''; ui.sheet.over = {}; qaPreview(); $('#qa').focus();
   const L = listById(t.listId);
   toast(created ? `✨ Создан список «${L.name}» · задача добавлена` : `Добавлено${t.due ? ' · ' + fmtDate(t.due) + (t.time ? ' ' + t.time : '') : ''} · ${L.name}`);
@@ -1111,11 +1139,11 @@ function onField(e) {
   if (ui.sheet?.type === 'task' && (f || sub)) {
     const t = task(ui.sheet.id); if (!t) return;
     if (sub) { const s = t.subtasks.find(x => x.id === sub); if (s) s.title = e.target.value; }
-    else if (f === 'tags') t.tags = e.target.value.split(/[,\s]+/).map(x => x.replace(/^#/, '').trim().toLowerCase()).filter(Boolean);
+    else if (f === 'tags') { t.tags = e.target.value.split(/[,\s]+/).map(x => x.replace(/^#/, '').trim().toLowerCase()).filter(Boolean); t.autoTags = (t.autoTags || []).filter(g => t.tags.includes(g)); }
     else if (f === 'repeat') t.repeat = e.target.value || null;
     else if (f === 'due') { t.due = e.target.value || null; if (!t.due) t.time = null; delete S.notified[t.id]; }
     else if (f === 'time') { t.time = e.target.value || null; if (t.time && !t.due) { t.due = today(); renderDetail(); } delete S.notified[t.id]; }
-    else t[f] = e.target.value;
+    else { t[f] = e.target.value; if (f === 'title' && e.type === 'change') { const auto = t.autoTags || []; const manual = t.tags.filter(g => !auto.includes(g)); t.autoTags = guessTags(t.title, listById(t.listId)?.name).filter(g => !manual.includes(g)); t.tags = [...manual, ...t.autoTags]; renderDetail(); } }
     save(); if (e.type === 'change' || f === 'title') render();
     if (e.type === 'change' && ['listId'].includes(f)) renderDetail();
   }
@@ -1198,7 +1226,6 @@ function openSettings() {
   const s = S.settings, standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   const np = 'Notification' in window ? Notification.permission : 'unsupported';
   openSheet(`<h2>Настройки ${sheetX}</h2>
-    <div class="row"><label>Тема</label><div class="f seg">${[['auto', 'Авто'], ['light', 'Светлая'], ['dark', 'Тёмная']].map(([k, n]) => `<button class="${s.theme === k ? 'on' : ''}" data-act="setTheme" data-v="${k}">${n}</button>`).join('')}</div></div>
     <div class="row"><label>Акцент</label><div class="f swatches">${COLORS.slice(0, 8).map(c => `<button class="${s.accent === c ? 'on' : ''}" style="--c:${c}" data-act="setAccent" data-v="${c}"></button>`).join('')}</div></div>
     <div class="row"><label>Цель в день</label><div class="f"><input type="number" min="1" max="50" value="${s.goal}" data-set="goal" ><span class="hint" style="align-self:center">задач</span></div></div>
     <div class="row"><label>Помодоро</label><div class="f"><input type="number" min="5" max="90" value="${s.pomo}" data-set="pomo"><input type="number" min="1" max="30" value="${s.short}" data-set="short"><input type="number" min="5" max="60" value="${s.long}" data-set="long"></div></div>
@@ -1224,11 +1251,9 @@ function importFile(e) {
   r.readAsText(f);
 }
 function applyTheme() {
-  const s = S.settings, dark = s.theme === 'dark' || (s.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  const s = S.settings;
   document.documentElement.style.setProperty('--accent', s.accent);
   document.documentElement.style.setProperty('--p1', s.accent === '#E5484D' ? '#4772FA' : s.accent);
-  $('meta[name=theme-color]')?.setAttribute('content', dark ? '#111215' : '#F4F5F8');
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => render());
 
@@ -1326,7 +1351,6 @@ const ACT = {
   hDel: () => { if (!ui.sheet.confirm) { ui.sheet.confirm = 1; return ui.sheet.draw(); } snap(); S.habits = S.habits.filter(h => h.id !== ui.sheet.id); save(); closeSheet(); toast('Привычка удалена', true); },
   // settings
   settings: openSettings,
-  setTheme: a => { S.settings.theme = a.dataset.v; save(); render(); openSettings(); },
   setAccent: a => { S.settings.accent = a.dataset.v; save(); render(); openSettings(); },
   setSound: a => { S.settings.sound = a.dataset.v === '1'; save(); openSettings(); if (S.settings.sound) chime(); },
   enableNotif: async () => { try { await Notification.requestPermission(); } catch (e) { } openSettings(); },
@@ -1403,6 +1427,7 @@ const flush = () => { clearTimeout(saveT); try { localStorage.setItem(KEY, JSON.
 document.addEventListener('visibilitychange', () => { if (document.hidden) return flush(); if (today() !== lastDay) { lastDay = today(); ui.calDay = today(); ui.calMonth = today().slice(0, 8) + '01'; } render(); reminderLoop(); });
 window.addEventListener('pagehide', flush);
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => { });
+if (!S.tagsV2) { S.tagsV2 = 1; S.tasks.forEach(t => { if (!t.deleted && !t.done && !(t.tags || []).length && t.title && !t.title.startsWith('👋')) { t.tags = guessTags(t.title, listById(t.listId)?.name); t.autoTags = [...t.tags]; } }); save(); }
 render();
 reminderLoop();
 </script>
