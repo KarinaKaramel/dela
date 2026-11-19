@@ -390,36 +390,27 @@ const CHK = '<svg viewBox="0 0 24 24"><path d="M5 12.5 10 17l9-10"/></svg>';
 const KEY = 'dela.v1';
 function seed() {
   const t = today();
-  const L = [
-    { id: 'personal', name: 'Личное', color: '#E54D9E', emoji: '🏠' },
-    { id: 'work', name: 'Работа', color: '#4772FA', emoji: '💼' },
-    { id: 'shop', name: 'Покупки', color: '#2BB673', emoji: '🛒' },
-  ];
   const mk = (o) => ({ id: uid(), title: '', notes: '', listId: 'inbox', done: false, doneAt: null, createdAt: Date.now(), due: null, time: null, priority: 0, tags: [], subtasks: [], repeat: null, status: 'todo', deleted: false, pomos: 0, ...o });
   return {
     version: 1,
-    lists: L,
+    lists: [],
     tasks: [
-      mk({ title: '👋 Добро пожаловать! Нажми, чтобы открыть подсказки', listId: 'inbox', due: t, priority: 3, notes:
-`Быстрое добавление понимает обычный текст:
-• «завтра в 18:00 позвонить маме»
-• «каждый понедельник планёрка 10:00 ~Работа»
-• «купить молоко #дом !1» — тег и высокий приоритет
-• «через 3 дня», «в пятницу», «25 декабря», «по будням», «ежемесячно»
+      mk({ title: '👋 Добро пожаловать! Нажми, чтобы открыть подсказки', due: t, priority: 3, notes:
+`Просто пиши задачу — список и теги появятся сами:
+• «подготовить отчёт для клиента» → список «Работа»
+• «купить молоко и хлеб» → «Покупки», тег #еда
+• «позвонить маме вечером» → «Близкие», тег #звонок
+• «записаться к стоматологу» → «Здоровье», тег #врач
+
+Даты и время тоже понимаются: «завтра в 18:00», «в пятницу», «25.12», «через 3 дня», «каждый понедельник», «по будням».
+Свой список: ~Название, свой тег: #тег, приоритет: !1 !2 !3.
 
 Жесты: свайп вправо — выполнено, свайп влево — удалить (можно отменить).
-Нажми ▶ «Фокус» в задаче — запустится помодоро-таймер.
 Бэкап: Настройки → Экспорт.`, subtasks: [{ id: uid(), title: 'Добавить свою первую задачу', done: false }, { id: uid(), title: 'Установить на экран «Домой»', done: false }] }),
-      mk({ title: 'Подготовить отчёт', listId: 'work', due: t, time: '15:00', priority: 2, tags: ['отчёты'], status: 'doing' }),
-      mk({ title: 'Спортзал', listId: 'personal', due: t, time: '19:00', repeat: 'weekly', priority: 1 }),
-      mk({ title: 'Молоко, авокадо, хлеб', listId: 'shop', due: addD(t, 1), tags: ['дом'] }),
-      mk({ title: 'Обновить документацию', listId: 'work', due: addD(t, 3), priority: 3 }),
-      mk({ title: 'Прочитать книгу', listId: 'personal', priority: 0 }),
     ],
     habits: [
       { id: uid(), name: 'Выпить 2 л воды', emoji: '💧', color: '#12A5B0', days: [0, 1, 2, 3, 4, 5, 6], log: {}, createdAt: t },
       { id: uid(), name: 'Читать 20 минут', emoji: '📚', color: '#8E4EC6', days: [0, 1, 2, 3, 4, 5, 6], log: {}, createdAt: t },
-      { id: uid(), name: 'Тренировка', emoji: '💪', color: '#FF7A45', days: [0, 2, 4], log: {}, createdAt: t },
     ],
     focus: [],
     timer: null,
@@ -436,6 +427,7 @@ function migrate(s) {
   s.settings = { ...d.settings, ...(s.settings || {}) };
   for (const k of ['lists', 'tasks', 'habits', 'focus']) if (!Array.isArray(s[k])) s[k] = [];
   s.notified = s.notified || {};
+  s.lists.forEach(l => { if (['personal', 'work', 'shop'].includes(l.id) && l.auto === undefined) l.auto = true; });
   return s;
 }
 let S = load();
@@ -451,12 +443,12 @@ const live = () => S.tasks.filter(t => !t.deleted);
 const B = '(?:^|\\s)', E = '(?=$|[\\s,.!?;])';
 const WDRE = [
   ['понедельник|понедельника|понеділок|понеділка|пн|monday|mon', 0],
-  ['вторник|вторника|вівторок|вівторка|вт|tuesday|tue', 1],
-  ['среду|среда|середу|середа|ср|wednesday|wed', 2],
+  ['вторник|вторника|вівторка|вівторок|вівторка|вт|tuesday|tue', 1],
+  ['среду|среда|среды|середу|середа|середи|ср|wednesday|wed', 2],
   ['четверг|четверга|четвер|чт|thursday|thu', 3],
-  ['пятницу|пятница|п\'ятницю|пʼятницю|пятницю|п\'ятниця|пт|friday|fri', 4],
-  ['субботу|суббота|суботу|субота|сб|saturday|sat', 5],
-  ['воскресенье|неділю|неділя|вс|нд|sunday|sun', 6],
+  ['пятницу|пятница|пятницы|п\'ятниці|п\'ятницю|пʼятницю|пятницю|п\'ятниця|пт|friday|fri', 4],
+  ['субботу|суббота|субботы|суботи|суботу|субота|сб|saturday|sat', 5],
+  ['воскресенье|воскресенья|неділі|неділю|неділя|вс|нд|sunday|sun', 6],
 ];
 const MONRE = ['январ|січ|jan', 'феврал|лют|feb', 'март|берез|mar', 'апрел|квіт|apr', 'ма[йя]|трав|may', 'июн|черв|jun', 'июл|лип|jul', 'август|серп|aug', 'сентябр|верес|sep', 'октябр|жовт|oct', 'ноябр|листопад|nov', 'декабр|груд|dec'];
 function nextWd(from, wd, includeToday = false) { let d = includeToday ? 0 : 1; while (wdIdx(addD(from, d)) !== wd) d++; return addD(from, d); }
@@ -469,7 +461,7 @@ function parseQuick(input) {
 
   // tags & list & priority
   take(/(?:^|\s)#([\p{L}\p{N}_-]+)/gu, (_, g) => { if (!r.tags.includes(g.toLowerCase())) r.tags.push(g.toLowerCase()); });
-  take(/(?:^|\s)[~@]([\p{L}\p{N}_-]+)/gu, (_, g) => { const l = S.lists.find(l => l.name.toLowerCase().startsWith(g.toLowerCase())) || (/^(входящие|inbox|вхідні)/i.test(g) ? { id: 'inbox' } : null); if (!l) return false; r.listId = l.id; });
+  take(/(?:^|\s)[~@]([\p{L}\p{N}_-]+)/gu, (_, g) => { const l = S.lists.find(l => l.name.toLowerCase().startsWith(g.toLowerCase())) || (/^(входящие|inbox|вхідні)/i.test(g) ? { id: 'inbox' } : null); if (l) r.listId = l.id; else r.newList = g[0].toUpperCase() + g.slice(1); });
   take(/(?:^|\s)(?:!([1-3])|p([1-3])|!!!|!!)(?=$|\s)/gi, (m, a, b) => { const n = a || b; r.priority = n ? 4 - Number(n) : (m.trim() === '!!!' ? 3 : 2); });
   take(new RegExp(B + '(срочно|важно|urgent|терміново)' + E, 'giu'), () => { r.priority = 3; });
 
@@ -500,7 +492,7 @@ function parseQuick(input) {
   });
   take(new RegExp(B + '(на следующей неделе|наступного тижня|next week)' + E, 'giu'), () => { r.due = nextWd(t, 0); });
   take(new RegExp(B + '(на выходных|на вихідних|this weekend|weekend)' + E, 'giu'), () => { r.due = nextWd(t, 5, true); });
-  for (const [re, wd] of WDRE) take(new RegExp(B + '(?:(?:в|во|у|on|next)\\s+)?(?:' + re + ')' + E, 'giu'), () => { if (r.due && r.repeat === 'weekly') return false; r.due = nextWd(t, wd, false); });
+  for (const [re, wd] of WDRE) take(new RegExp(B + '(?:(?:в|во|у|до|on|next|by)\\s+)?(?:' + re + ')' + E, 'giu'), () => { if (r.due && r.repeat === 'weekly') return false; r.due = nextWd(t, wd, false); });
   take(new RegExp(B + '(\\d{1,2})\\s+(' + MONRE.map(m => '(?:' + m + ')').join('|') + ')[\\p{L}]*' + E, 'giu'), (m, d, mon) => {
     const mi = MONRE.findIndex(x => new RegExp('^(?:' + x + ')', 'iu').test(mon)); if (mi < 0) return false;
     let y = new Date().getFullYear(); let c = `${y}-${pad(mi + 1)}-${pad(+d)}`; if (c < t) c = `${y + 1}-${pad(mi + 1)}-${pad(+d)}`; r.due = c;
@@ -513,6 +505,47 @@ function parseQuick(input) {
   if (r.repeat && !r.due) r.due = t;
   r.title = s.replace(/\s+/g, ' ').trim();
   return r;
+}
+
+
+/* ================= авто-списки и авто-теги по смыслу ================= */
+// стемы ищутся с начала слова; ru / uk / en
+const CATS = [
+  { name: 'Работа', emoji: '💼', color: '#4772FA', w: 'отчёт отчет отчет звіт созвон дзвінок планёрк планерк митинг мітинг meeting standup стендап дедлайн deadline jira джир confluence конфлюенс документац вики wiki ревью review merge мерж релиз реліз проект клиент клієнт презентац коллег колег офис офіс работ робот тикет ticket спринт sprint бриф brief спек spec api апи код code деплой deploy тест баг bug руководител керівник менеджер manager резюме вакансі собеседован співбесід' },
+  { name: 'Покупки', emoji: '🛒', color: '#2BB673', w: 'куп придбат заказать замов order магазин супермаркет ринок рынок продукт молок хлеб хліб яйц сыр сир овощ овоч фрукт мясо м\'ясо курица курк вода воду кофе каву кава чай авокадо банан яблок rozetka розетк ozon wildberries amazon aliexpress алиэкспресс сільпо сильпо атб metro' },
+  { name: 'Здоровье', emoji: '💪', color: '#FF7A45', w: 'врач лікар доктор стоматолог зубн терапевт анализ аналіз узи узд таблет витамин вітамін аптек больниц лікарн клиник клінік спортзал залу зале трениров тренув фитнес фітнес бег біг пробежк пробіжк йог пилатес пілатес бассейн басейн растяжк розтяжк массаж масаж спать gym workout run' },
+  { name: 'Дом', emoji: '🏠', color: '#E54D9E', w: 'убрать убрат прибрат уборк прибиран помыть помит вимит стирк прання постират посуд пылесос пропылесос пилосос полить полит цвет квіт ремонт починить полагод лампочк мусор сміття приготов готовить готуват ужин вечер обед обід кота коту котик кошк собак пса корм квартир дом хат' },
+  { name: 'Финансы', emoji: '💰', color: '#F5A524', w: 'оплат сплат заплат платеж платіж счёт счет рахун налог податок декларац банк перевод переказ кредит депозит коммунал комунал подписк підписк зарплат бюджет инвест інвест страховк страхув монобанк mono privat приват a-bank абанк kolo' },
+  { name: 'Учёба', emoji: '📚', color: '#8E4EC6', w: 'курс урок учить вчит выучить вивчит экзамен іспит лекци лекці домашк книг прочитать прочитат читать читат конспект теори автошкол пдр английск англійськ english язык мов универ універ вуз семинар семінар вебинар вебінар' },
+  { name: 'Поездки', emoji: '✈️', color: '#12A5B0', w: 'билет квиток отель готел хостел airbnb букинг booking самолёт самолет літак рейс поезд потяг вокзал аэропорт аеропорт визу виза чемодан валіз отпуск відпустк поездк подорож' },
+  { name: 'Близкие', emoji: '❤️', color: '#E5484D', w: 'мам мама мамі папа тато бабушк бабус дедушк дідус сестр брат друг подруг дружин жена чоловік муж свекр рождени народжен подар поздрав привіта' },
+];
+const TAGRULES = [
+  ['звонок', 'позвонить позвон подзвонит зателефон созвон дзвінок call'],
+  ['встреча', 'встреча встрет зустріч meeting митинг мітинг'],
+  ['оплата', 'оплат сплат заплат платеж платіж'],
+  ['документы', 'документ справк довідк паспорт договор договір заявлен заяв'],
+  ['врач', 'врач лікар доктор стоматолог терапевт'],
+  ['спорт', 'спортзал залу зале трениров тренув фитнес фітнес бег біг пробежк йог бассейн басейн workout gym'],
+  ['еда', 'продукт молок хлеб хліб приготов готовить готуват ужин обед обід завтрак сніданок'],
+  ['уборка', 'убрать прибрат уборк прибиран пылесос пропылесос пилосос помыть вимит стирк прання'],
+  ['подарки', 'подар'],
+  ['чтение', 'книг прочитать прочитат читать читат'],
+  ['письмо', 'написать написат письмо лист email почт ответить відповіст'],
+  ['дедлайн', 'дедлайн deadline сдать здати'],
+];
+const CAT_RE = CATS.map(c => ({ ...c, words: c.w.split(/\s+/) }));
+function scoreWords(text, words) { const t = ' ' + text.toLowerCase(); let n = 0; for (const w of words) if (new RegExp('(?:^|[^\\p{L}])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'iu').test(t)) n++; return n; }
+function guessList(text) {
+  let best = null, bs = 0;
+  for (const c of CAT_RE) { const sc = scoreWords(text, c.words); if (sc > bs) { bs = sc; best = c; } }
+  return best;
+}
+function guessTags(text) { return TAGRULES.filter(([, w]) => scoreWords(text, w.split(/\s+/))).map(([g]) => g).slice(0, 3); }
+function ensureList(name, emoji, color) {
+  let l = S.lists.find(x => x.name.toLowerCase() === name.toLowerCase());
+  if (!l) { l = { id: uid(), name, emoji: emoji || '📁', color: color || COLORS[S.lists.length % COLORS.length], auto: true }; S.lists.push(l); }
+  return l;
 }
 
 /* ================= task logic ================= */
@@ -678,8 +711,9 @@ function renderSide() {
   const tags = [...new Set(live().flatMap(t => t.tags))].sort();
   $('.side').innerHTML = `<div class="brand">dela<b>.</b></div>`
     + SMART.map(s => navBtn(s.id, I(s.icon), s.name, ['done', 'trash'].includes(s.id) ? (s.id === 'trash' ? S.tasks.filter(t => t.deleted).length || '' : '') : cnt(s.id) || '', 0, s.id === 'today' ? 'var(--accent)' : s.id === 'important' ? 'var(--p3)' : '')).join('')
-    + `<h4>Списки <button data-act="editList" aria-label="Новый список">${I('plus')}</button></h4>`
-    + S.lists.map(l => navBtn('list:' + l.id, l.emoji || `<i class="dot" style="--c:${l.color}"></i>`, l.name, cnt('list:' + l.id))).join('')
+    + `<h4>Списки <button title="Списки создаются сами по смыслу задачи" data-act="editList" aria-label="Новый список">${I('plus')}</button></h4>`
+    + S.lists.filter(l => !l.auto || live().some(t => t.listId === l.id) || ui.list === 'list:' + l.id).map(l => navBtn('list:' + l.id, l.emoji || `<i class="dot" style="--c:${l.color}"></i>`, l.name, cnt('list:' + l.id))).join('')
+    + (S.lists.some(l => !l.auto || live().some(t => t.listId === l.id)) ? '' : `<div class="hint" style="padding:2px 10px 6px">Появятся сами — по смыслу задач ✨</div>`)
     + (tags.length ? `<h4>Теги</h4>` + tags.map(g => navBtn('tag:' + g, I('tag'), g, cnt('tag:' + g), 'var(--accent)')).join('') : '')
     + `<h4>Ещё</h4>`
     + `<button class="nav ${ui.tab === 'stats' ? 'on' : ''}" data-act="tab" data-tab="stats"><span class="ico">${I('chart')}</span>Статистика</button>`
@@ -796,7 +830,7 @@ function vCal() {
   }
   const sel = (byDay[ui.calDay] || []).sort((a, b) => a.done - b.done || cmp(a, b));
   const sx = pd(ui.calDay);
-  return topbar('Календарь', `<button class="ib" data-act="calToday" title="Сегодня">${I('sun')}</button><button class="ib" data-act="ics" data-scope="all" title="Экспорт в Календарь iPhone">${I('down')}</button>`, false)
+  return topbar('Календарь', `<button class="ib" data-act="calToday" title="Сегодня">${I('sun')}</button>`, false)
     + `<div class="page"><div class="wrap"><div class="calhead"><b>${MONFULL[m0.getMonth()]} ${m0.getFullYear()}</b><button class="ib" data-act="calNav" data-n="-1">${I('left')}</button><button class="ib" data-act="calNav" data-n="1">${I('right')}</button></div>
     <div class="cal">${g}</div>
     <div class="group"><div class="ghead" style="cursor:default">${ui.calDay === T ? 'Сегодня' : WD[wdIdx(ui.calDay)]}, ${sx.getDate()} ${MON[sx.getMonth()]} <span class="n">${sel.length}</span></div>
@@ -917,25 +951,6 @@ function reminderLoop() {
 }
 setInterval(reminderLoop, 20000);
 
-/* ================= ICS export (надёжные напоминания на iPhone) ================= */
-function ics(tasks) {
-  const z = s => s.replace(/[\\;,]/g, m => '\\' + m).replace(/\n/g, '\\n');
-  const rr = { daily: 'FREQ=DAILY', weekdays: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', weekly: 'FREQ=WEEKLY', monthly: 'FREQ=MONTHLY', yearly: 'FREQ=YEARLY' };
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
-  let out = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//dela//RU\r\nCALSCALE:GREGORIAN\r\n';
-  tasks.filter(t => t.due).forEach(t => {
-    const d = t.due.replace(/-/g, '');
-    out += `BEGIN:VEVENT\r\nUID:${t.id}@dela\r\nDTSTAMP:${stamp}\r\nSUMMARY:${z(t.title)}\r\n`;
-    if (t.time) { const s = d + 'T' + t.time.replace(':', '') + '00'; const e = new Date(`${t.due}T${t.time}`); e.setMinutes(e.getMinutes() + 30);
-      out += `DTSTART:${s}\r\nDTEND:${ds(e).replace(/-/g, '')}T${pad(e.getHours())}${pad(e.getMinutes())}00\r\n`;
-      out += 'BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:Напоминание\r\nTRIGGER:-PT0M\r\nEND:VALARM\r\n';
-    } else { out += `DTSTART;VALUE=DATE:${d}\r\nDTEND;VALUE=DATE:${addD(t.due, 1).replace(/-/g, '')}\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:Напоминание\r\nTRIGGER:PT9H\r\nEND:VALARM\r\n`; }
-    if (t.repeat) out += `RRULE:${rr[t.repeat]}\r\n`;
-    if (t.notes) out += `DESCRIPTION:${z(t.notes)}\r\n`;
-    out += 'END:VEVENT\r\n';
-  });
-  return out + 'END:VCALENDAR\r\n';
-}
 function download(name, text, type) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name;
@@ -1012,7 +1027,7 @@ function openAdd(preset = {}) {
     <input id="qa" class="main" placeholder="Например: завтра в 10 созвон #работа !1" autocomplete="off" enterkeyhint="done">
     <div class="chips" id="qachips"></div>
     <div style="display:flex;gap:8px"><button class="btn" style="flex:1" data-act="qaSave">Добавить</button></div>
-    <p class="hint">Пиши обычным текстом: <code>сегодня</code> <code>завтра</code> <code>в пятницу</code> <code>25.12</code> <code>через 3 дня</code> <code>в 18:30</code> <code>каждый день</code> <code>по будням</code> · приоритет <code>!1</code> <code>!2</code> <code>!3</code> · тег <code>#дом</code> · список <code>~Работа</code></p></div>`);
+    <p class="hint">Пиши обычным текстом: <code>сегодня</code> <code>завтра</code> <code>в пятницу</code> <code>25.12</code> <code>через 3 дня</code> <code>в 18:30</code> <code>каждый день</code> <code>по будням</code> · приоритет <code>!1</code> <code>!2</code> <code>!3</code> · список и теги подберутся сами ✨, а можно и вручную: <code>~Работа</code> <code>#дом</code></p></div>`);
   const inp = $('#qa', el); setTimeout(() => inp.focus(), 50);
   inp.addEventListener('input', qaPreview);
   inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); qaSave(); } });
@@ -1021,38 +1036,50 @@ function openAdd(preset = {}) {
 function qaData() {
   const s = ui.sheet, v = $('#qa')?.value || '';
   const p = parseQuick(v), pre = s.preset, o = s.over;
+  let listId = 'listId' in o ? o.listId : p.listId ?? pre.listId ?? null, newList = null, auto = false;
+  if (!listId && p.newList) newList = { name: p.newList, emoji: '📁', color: COLORS[S.lists.length % COLORS.length] };
+  if (!listId && !newList && p.title) {
+    const g = guessList(p.title);
+    if (g) { const ex = S.lists.find(l => l.name.toLowerCase() === g.name.toLowerCase()); if (ex) listId = ex.id; else newList = { name: g.name, emoji: g.emoji, color: g.color }; auto = true; }
+  }
+  const autoTags = p.title ? guessTags(p.title) : [];
   return {
     title: p.title,
     due: 'due' in o ? o.due : p.due ?? pre.due ?? null,
     time: p.time ?? pre.time ?? null,
     priority: 'priority' in o ? o.priority : p.priority ?? pre.priority ?? 0,
-    listId: 'listId' in o ? o.listId : p.listId ?? pre.listId ?? 'inbox',
-    tags: [...new Set([...(pre.tags || []), ...p.tags])],
+    listId: listId || (newList ? null : 'inbox'), newList, auto,
+    tags: [...new Set([...(pre.tags || []), ...p.tags, ...autoTags])], autoTags,
     repeat: p.repeat, status: pre.status === 'doing' ? 'doing' : 'todo',
   };
 }
 function qaPreview() {
   const d = qaData(), T = today();
   const flag = `<svg class="i" viewBox="0 0 24 24" style="color:${d.priority ? `var(--p${d.priority})` : 'currentColor'}">${d.priority ? P.flagF : P.flag}</svg>`;
+  const opts = [{ id: 'inbox' }, ...S.lists].map(l => { const L = listById(l.id); return `<option value="${L.id}" ${L.id === d.listId ? 'selected' : ''}>${L.emoji || ''} ${esc(L.name)}</option>`; }).join('')
+    + (d.newList ? `<option value="__new" selected>${d.newList.emoji} ${esc(d.newList.name)} · новый</option>` : '');
   $('#qachips').innerHTML =
     `<button class="chip ${d.due === T ? 'on' : ''}" data-act="qaDue" data-v="${T}">${I('sun')}Сегодня</button>`
     + `<button class="chip ${d.due === addD(T, 1) ? 'on' : ''}" data-act="qaDue" data-v="${addD(T, 1)}">Завтра</button>`
     + (d.due && d.due !== T && d.due !== addD(T, 1) ? `<button class="chip on" data-act="qaDue" data-v="">${I('cal')}${fmtDate(d.due)}</button>` : '')
-    + `<label class="chip ${d.due ? '' : ''}">${I('cal')}<input type="date" id="qadate" value="${d.due || ''}" style="background:transparent;border:0;padding:0;width:20px;opacity:.01;position:absolute"><span>Дата…</span></label>`
+    + `<label class="chip" style="position:relative">${I('cal')}<input type="date" id="qadate" value="${d.due || ''}" style="background:transparent;border:0;padding:0;width:100%;height:100%;opacity:.01;position:absolute;inset:0"><span>Дата…</span></label>`
     + (d.time ? `<span class="chip on">${I('clock')}${d.time}</span>` : '')
     + (d.repeat ? `<span class="chip on">${I('repeat')}${REPEAT[d.repeat]}</span>` : '')
     + `<button class="chip ${d.priority ? 'on' : ''}" data-act="qaPrio">${flag}${d.priority ? PRIO[d.priority] : 'Приоритет'}</button>`
-    + `<span class="chip ${d.listId !== 'inbox' ? 'on' : ''}">${I('folder')}<select id="qalist">${[{ id: 'inbox' }, ...S.lists].map(l => { const L = listById(l.id); return `<option value="${L.id}" ${L.id === d.listId ? 'selected' : ''}>${esc(L.name)}</option>`; }).join('')}</select></span>`
-    + d.tags.map(g => `<span class="chip on">#${esc(g)}</span>`).join('');
+    + `<span class="chip ${d.listId !== 'inbox' ? 'on' : ''}">${I('folder')}<select id="qalist">${opts}</select>${d.auto ? '<small style="opacity:.7">✨ авто</small>' : ''}</span>`
+    + d.tags.map(g => `<span class="chip on">#${esc(g)}${d.autoTags.includes(g) ? ' ✨' : ''}</span>`).join('');
   $('#qadate').onchange = e => { ui.sheet.over.due = e.target.value || null; qaPreview(); };
-  $('#qalist').onchange = e => { ui.sheet.over.listId = e.target.value; qaPreview(); };
+  $('#qalist').onchange = e => { if (e.target.value !== '__new') ui.sheet.over.listId = e.target.value; qaPreview(); };
 }
 function qaSave() {
   const d = qaData(); if (!d.title) { $('#qa')?.focus(); return; }
-  const t = newTask(d); S.tasks.push(t); save();
+  let listId = d.listId, created = null;
+  if (d.newList) { const had = S.lists.length; const l = ensureList(d.newList.name, d.newList.emoji, d.newList.color); listId = l.id; if (S.lists.length > had) created = l; }
+  const { newList, auto, autoTags, ...rest } = d;
+  const t = newTask({ ...rest, listId }); S.tasks.push(t); save();
   $('#qa').value = ''; ui.sheet.over = {}; qaPreview(); $('#qa').focus();
   const L = listById(t.listId);
-  toast(`Добавлено${t.due ? ' · ' + fmtDate(t.due) + (t.time ? ' ' + t.time : '') : ''} · ${L.name}`);
+  toast(created ? `✨ Создан список «${L.name}» · задача добавлена` : `Добавлено${t.due ? ' · ' + fmtDate(t.due) + (t.time ? ' ' + t.time : '') : ''} · ${L.name}`);
   render();
 }
 
@@ -1074,7 +1101,7 @@ function renderDetail() {
       <div class="subs">${t.subtasks.map(s => `<div class="s ${s.done ? 'done' : ''}"><button class="chk" data-act="subToggle" data-s="${s.id}">${CHK}</button><input type="text" data-sub="${s.id}" value="${esc(s.title)}"><button class="x" data-act="subDel" data-s="${s.id}">${I('x')}</button></div>`).join('')}
       <div class="s"><span style="width:19px;color:var(--text3);display:grid;place-items:center">${I('plus')}</span><input type="text" id="subnew" placeholder="Добавить подзадачу" enterkeyhint="done"></div></div></div>
     <div style="margin-top:10px"><textarea data-f="notes" placeholder="Заметки…">${esc(t.notes)}</textarea></div>
-    <div class="actions"><button data-act="dFocus">${I('play')}Фокус${t.pomos ? ` · 🍅${t.pomos}` : ''}</button><button data-act="ics" data-scope="one">${I('bell')}В Календарь</button><button data-act="dDup">${I('copy')}Дублировать</button><button class="red" data-act="dDel">${I('trash')}Удалить</button></div>
+    <div class="actions"><button data-act="dFocus">${I('play')}Фокус${t.pomos ? ` · 🍅${t.pomos}` : ''}</button><button data-act="dDup">${I('copy')}Дублировать</button><button class="red" data-act="dDel">${I('trash')}Удалить</button></div>
     <p class="hint" style="margin-top:12px">Создано ${new Date(t.createdAt).toLocaleString('ru', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${t.doneAt ? ' · выполнено ' + new Date(t.doneAt).toLocaleString('ru', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</p>`;
   const ta = $('textarea[data-f=title]', box); const fit = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; }; fit(); ta.addEventListener('input', fit);
   $('#subnew', box).addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.value.trim()) { t.subtasks.push({ id: uid(), title: e.target.value.trim(), done: false }); save(); renderDetail(); render(); $('#subnew').focus(); } });
@@ -1125,7 +1152,6 @@ function openListMenu() {
     <div class="actions" style="margin-top:18px">
       <button data-act="hideDone">${I('eye')}${S.settings.hideDone ? 'Показывать выполненные' : 'Скрыть выполненные'}</button>
       <button data-act="reschedule">${I('sun')}Просроченные → на сегодня</button>
-      <button data-act="ics" data-scope="list">${I('bell')}Экспорт в Календарь</button>
       ${isL ? `<button data-act="editList" data-id="${key.slice(5)}">${I('edit')}Изменить список</button>` : ''}
     </div>`);
 }
@@ -1179,8 +1205,7 @@ function openSettings() {
     <div class="row"><label></label><div class="f hint">фокус · короткий · длинный перерыв (мин)</div></div>
     <div class="row"><label>Звук</label><div class="f seg"><button class="${s.sound ? 'on' : ''}" data-act="setSound" data-v="1">Вкл</button><button class="${!s.sound ? 'on' : ''}" data-act="setSound" data-v="0">Выкл</button></div></div>
     <div class="row"><label>Уведомления</label><div class="f">${np === 'granted' ? '<span class="hint" style="align-self:center">✅ Включены (пока приложение открыто)</span>' : np === 'unsupported' ? '<span class="hint">Установи на экран «Домой», чтобы включить</span>' : '<button class="btn sm ghost" data-act="enableNotif">Включить</button>'}</div></div>
-    <p class="hint">💡 Самые надёжные напоминания на iPhone — кнопка «В Календарь» в задаче: событие с будильником попадёт в Календарь iOS и сработает, даже если приложение закрыто.</p>
-    <div class="actions"><button data-act="export">${I('down')}Экспорт (бэкап)</button><label class="chip" style="padding:9px 12px;border-radius:10px;cursor:pointer;font-size:13.5px">${I('up')}Импорт<input type="file" id="imp" accept=".json,application/json" hidden></label><button data-act="ics" data-scope="all">${I('cal')}Все задачи → Календарь</button></div>
+    <div class="actions"><button data-act="export">${I('down')}Экспорт (бэкап)</button><label class="chip" style="padding:9px 12px;border-radius:10px;cursor:pointer;font-size:13.5px">${I('up')}Импорт<input type="file" id="imp" accept=".json,application/json" hidden></label></div>
     ${standalone ? '' : `<div class="panel" style="background:var(--accent-soft);box-shadow:none"><h3>📲 Установить на iPhone</h3><div class="hint">Открой сайт в Safari → кнопка «Поделиться» → «На экран Домой». Приложение будет работать офлайн, как обычное.</div></div>`}
     <div class="actions" style="margin-top:18px"><button class="red" data-act="wipe">${I('trash')}${ui.sheet.confirm ? 'Нажми ещё раз — всё удалится' : 'Удалить все данные'}</button></div>
     <p class="hint" style="margin-top:14px">dela. · все данные хранятся только на этом устройстве</p>`);
@@ -1257,16 +1282,6 @@ const ACT = {
   dDup: () => { const t = task(ui.sheet.id); const c = { ...JSON.parse(JSON.stringify(t)), id: uid(), createdAt: Date.now(), done: false, doneAt: null, pomos: 0, title: t.title + ' (копия)' }; S.tasks.push(c); save(); render(); openTask(c.id); toast('Задача продублирована'); },
   dDel: () => { const id = ui.sheet.id; closeSheet(true); deleteTask(id); },
   dFocus: () => { const id = ui.sheet.id; closeSheet(true); S.timer.taskId = id; if (S.timer.mode !== 'work' && !S.timer.running) fSet('work'); ui.tab = 'focus'; save(); render(); if (!S.timer.running) fStart(); },
-  ics: a => {
-    const sc = a.dataset.scope; let items;
-    if (sc === 'one') items = [task(ui.sheet.id)];
-    else if (sc === 'list') items = live().filter(t => !t.done && scopeOf(ui.list)(t));
-    else items = live().filter(t => !t.done);
-    items = items.filter(t => t && t.due);
-    if (!items.length) return toast('Сначала назначь задаче дату');
-    download(items.length === 1 ? 'dela-задача.ics' : 'dela-задачи.ics', ics(items), 'text/calendar');
-    toast(items.length === 1 ? 'Открой файл → «Добавить в Календарь»' : `Экспорт: ${items.length} задач с напоминаниями`);
-  },
   // lists
   editList: a => openListEdit(a.dataset.id),
   lEmoji: a => { ui.sheet.draft.emoji = a.dataset.v; ui.sheet.draw(); },
