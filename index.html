@@ -305,6 +305,19 @@ main{overflow:hidden;display:flex;flex-direction:column;min-width:0;height:100%}
   .col{flex:1 1 0;min-width:260px}
 }
 @media (min-width:1300px){ .page>.wrap{max-width:860px} }
+
+/* drag & drop */
+.task{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+body.dragging,body.dragging *{cursor:grabbing!important}
+.task.drop{box-shadow:inset 0 3px 0 var(--accent)}
+.task.drop.dropAfter{box-shadow:inset 0 -3px 0 var(--accent)}
+.ghead.drop,.nav.drop,.cal .d.drop{background:var(--accent-soft);outline:2px dashed var(--accent);outline-offset:-2px;border-radius:10px}
+.ghost .chk{pointer-events:none}
+#mic.on{background:var(--p3);animation:pulse 1.2s infinite}
+@keyframes pulse{50%{transform:scale(1.08)}}
+.ib.spin svg{animation:spin 1s linear infinite;color:var(--accent)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ib.warn{color:var(--p2)}
 </style>
 </head>
 <body>
@@ -383,6 +396,7 @@ const P = {
   sort: '<path d="M3 6h13M3 12h9M3 18h5M17 10V20M14 17l3 3 3-3"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16Z"/>',
   arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>', eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  cloud: '<path d="M7 18a4.5 4.5 0 0 1-.5-9A6 6 0 0 1 18 8.5a4.5 4.5 0 0 1-.5 9.5Z"/>',
   fire: '<path d="M12 3c1 4 5 5.5 5 10a5 5 0 0 1-10 0c0-2.5 1.5-3.5 2-5 1 1.5 2 2 2 2s-1-4 1-7Z"/>',
 };
 const I = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24">${P[n] || ''}</svg>`;
@@ -435,7 +449,13 @@ function migrate(s) {
 }
 let S = load();
 let saveT;
-function save() { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Не удалось сохранить: память заполнена'); } }, 60); }
+function save() { clearTimeout(saveT); saveT = setTimeout(persist, 60); }
+function persist(noSync) {
+  clearTimeout(saveT);
+  if (typeof stamp === 'function') stamp();
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Не удалось сохранить: память заполнена'); }
+  if (!noSync && typeof syncSoon === 'function') syncSoon();
+}
 window.addEventListener('storage', e => { if (e.key === KEY) { S = load(); render(); } });
 
 const listById = id => id === 'inbox' ? { id: 'inbox', name: 'Входящие', color: '#6B7280', emoji: '📥' } : S.lists.find(l => l.id === id);
@@ -649,7 +669,7 @@ const SMART = [
   { id: 'trash', name: 'Корзина', icon: 'trash' },
 ];
 const TABS = [
-  ['tasks', 'Задачи', 'tasks'], ['cal', 'Календарь', 'cal'], ['matrix', 'Матрица', 'matrix'], ['focus', 'Фокус', 'timer'], ['habits', 'Привычки', 'habit'],
+  ['matrix', 'Матрица', 'matrix'], ['cal', 'Календарь', 'cal'], ['tasks', 'Задачи', 'tasks'], ['focus', 'Фокус', 'timer'], ['habits', 'Привычки', 'habit'],
 ];
 
 function scopeOf(key) {
@@ -670,6 +690,8 @@ function scopeName(key) {
 }
 function cmp(a, b) {
   const so = S.settings.sort;
+  if (!!b.pinned - !!a.pinned) return !!b.pinned - !!a.pinned;
+  if (so === 'manual') return (a.order ?? a.createdAt) - (b.order ?? b.createdAt);
   if (so === 'title') return a.title.localeCompare(b.title, 'ru');
   if (so === 'created') return a.createdAt - b.createdAt;
   if (so === 'priority') return b.priority - a.priority || (a.due || '9').localeCompare(b.due || '9') || (a.time || '99').localeCompare(b.time || '99');
@@ -693,13 +715,14 @@ function taskRow(t, o = {}) {
     const cls = !t.done && t.due < T ? 'od' : t.due === T ? 'td' : '';
     meta.push(`<span class="${cls}">${I('cal')}${fmtDate(t.due)}${t.time ? ' ' + t.time : ''}</span>`);
   } else if (t.time && !o.noTime) meta.push(`<span>${I('clock')}${t.time}</span>`);
+  if (t.pinned) meta.push(`<span style="color:var(--accent)">📌</span>`);
   if (t.repeat) meta.push(`<span title="${REPEAT[t.repeat]}">${I('repeat')}</span>`);
   if (t.subtasks.length) meta.push(`<span>${I('sub')}${t.subtasks.filter(s => s.done).length}/${t.subtasks.length}</span>`);
   if (t.notes) meta.push(`<span>${I('note')}</span>`);
   if (t.pomos) meta.push(`<span>🍅 ${t.pomos}</span>`);
   if (!o.noList && t.listId !== 'inbox') { const l = listById(t.listId); if (l) meta.push(`<span><i class="dot" style="--c:${l.color};width:7px;height:7px"></i>${esc(l.name)}</span>`); }
   t.tags.forEach(g => meta.push(`<span class="tag">#${esc(g)}</span>`));
-  const inner = `<div class="task ${pc} ${t.done ? 'done' : ''}" data-id="${t.id}" ${o.drag ? 'draggable="true"' : ''}>
+  const inner = `<div class="task ${pc} ${t.done ? 'done' : ''}" data-id="${t.id}" data-drop="task" data-g="${o.g || ''}">
     <button class="chk" data-act="toggle" data-id="${t.id}" aria-label="Выполнить">${CHK}</button>
     <div class="tb" data-act="open" data-id="${t.id}"><div class="tt">${esc(t.title) || '<span style="color:var(--text3)">Без названия</span>'}</div>${meta.length ? `<div class="tm">${meta.join('')}</div>` : ''}</div>
     ${t.priority && !o.compact ? `<svg class="i flag" viewBox="0 0 24 24">${P.flagF}</svg>` : ''}
@@ -710,7 +733,8 @@ function taskRow(t, o = {}) {
 function groupHtml(key, title, items, o = {}) {
   if (!items.length) return '';
   const ck = ui.list + ':' + key, closed = S.settings.closed[ck];
-  return `<div class="group"><div class="ghead ${closed ? 'closed' : ''} ${key === 'over' ? 'over' : ''}" data-act="fold" data-k="${esc(ck)}">${I('chev')}${esc(title)} <span class="n">${items.length}</span>
+  o = { ...o, g: key };
+  return `<div class="group"><div class="ghead ${closed ? 'closed' : ''} ${key === 'over' ? 'over' : ''}" data-act="fold" data-k="${esc(ck)}" data-drop="group" data-g="${key}">${I('chev')}${esc(title)} <span class="n">${items.length}</span>
     ${key === 'over' ? '<button class="chip" style="margin-left:auto;padding:3px 8px" data-act="reschedule">На сегодня</button>' : ''}</div>
     ${closed ? '' : `<div class="card">${items.map(t => taskRow(t, o)).join('')}</div>`}</div>`;
 }
@@ -742,7 +766,7 @@ function render() {
 function renderSide() {
   const open = live().filter(t => !t.done);
   const cnt = k => open.filter(scopeOf(k)).length;
-  const navBtn = (key, ico, name, c, color) => `<button class="nav ${ui.tab === 'tasks' && ui.list === key ? 'on' : ''}" data-act="list" data-k="${esc(key)}">
+  const navBtn = (key, ico, name, c, color) => `<button class="nav ${ui.tab === 'tasks' && ui.list === key ? 'on' : ''}" data-act="list" data-k="${esc(key)}" data-drop="nav">
     <span class="ico" ${color ? `style="color:${color}"` : ''}>${ico}</span><span>${esc(name)}</span>${c ? `<span class="cnt">${c}</span>` : ''}</button>`;
   const tags = [...new Set(live().flatMap(t => t.tags))].sort();
   $('.side').innerHTML = `<div class="brand">dela<b>.</b></div>`
@@ -766,7 +790,7 @@ function vTasks() {
   const l = key.startsWith('list:') ? listById(key.slice(5)) : null;
   const icon = l ? (l.emoji || '') : smart ? `<span style="color:${key === 'important' ? 'var(--p3)' : 'var(--accent)'};display:flex">${I(smart.icon)}</span>` : I('tag');
   const canKanban = !['done', 'trash'].includes(key);
-  const right = `<button class="ib ${ui.searchOpen ? 'on' : ''}" data-act="search" aria-label="Поиск">${I('search')}</button>`
+  const right = syncButton() + `<button class="ib ${ui.searchOpen ? 'on' : ''}" data-act="search" aria-label="Поиск">${I('search')}</button>`
     + (canKanban ? `<button class="ib ${ui.view === 'kanban' ? 'on' : ''}" data-act="view" aria-label="Вид">${I(ui.view === 'kanban' ? 'list' : 'kanban')}</button>` : '')
     + `<button class="ib" data-act="listMenu" aria-label="Ещё">${I('more')}</button>`;
   let h = topbar(`${icon}<span style="overflow:hidden;text-overflow:ellipsis">${esc(scopeName(key))}</span>`, right);
@@ -780,6 +804,7 @@ function vTasks() {
     h += `<div class="sub"><span>${WD[wdIdx(T)]}, ${d.getDate()} ${MON[d.getMonth()]}</span><span class="goal" style="margin-left:auto"><span class="ring" style="--v:${pct}"></span>${doneToday}/${g} за день</span></div>`;
   }
   h += `<div class="page"><div class="wrap">`;
+  if (SY.on && SY.need) h += `<button class="card" data-act="gLogin" style="display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;margin-top:10px;text-align:left;background:color-mix(in srgb,var(--p2) 16%,transparent);box-shadow:none"><span style="font-size:22px">☁️</span><span style="flex:1"><b>Синхронизация на паузе</b><br><span class="hint">Нажми, чтобы снова войти в Google</span></span>${I('right')}</button>`;
 
   if (ui.search.trim()) {
     const q = ui.search.trim().toLowerCase();
@@ -805,7 +830,7 @@ function vTasks() {
   }
 
   const sc = scopeOf(key);
-  const open = live().filter(t => !t.done && sc(t)).sort(cmp);
+  let open = live().filter(t => !t.done && sc(t)).sort(cmp);
   const doneList = live().filter(t => t.done && (['today', 'next7'].includes(key) ? t.doneAt && ds(new Date(t.doneAt)) === T : sc(t))).sort((a, b) => b.doneAt - a.doneAt).slice(0, 60);
   const isList = key.startsWith('list:') || key === 'inbox';
 
@@ -813,8 +838,8 @@ function vTasks() {
     const cols = [['todo', 'Нужно сделать', '#6B7280'], ['doing', 'В процессе', '#F5A524'], ['done', 'Готово', '#2BB673']];
     h += `<div class="kan">` + cols.map(([st, name, c]) => {
       const items = st === 'done' ? doneList : open.filter(t => (t.status || 'todo') === st);
-      return `<div class="col" data-col="${st}"><h3><i class="dot" style="--c:${c}"></i>${name} <span class="n">${items.length}</span></h3>
-        ${items.map(t => `<div class="kc">${taskRow(t, { noSwipe: true, drag: true, noList: isList })}${st !== 'done' ? `<div class="mv">${st === 'doing' ? `<button data-act="status" data-id="${t.id}" data-s="todo">← Назад</button>` : ''}<button data-act="status" data-id="${t.id}" data-s="${st === 'todo' ? 'doing' : 'done'}">${st === 'todo' ? 'В работу →' : 'Готово ✓'}</button></div>` : ''}</div>`).join('')}
+      return `<div class="col" data-col="${st}" data-drop="col"><h3><i class="dot" style="--c:${c}"></i>${name} <span class="n">${items.length}</span></h3>
+        ${items.map(t => `<div class="kc">${taskRow(t, { noSwipe: true, noList: isList })}${st !== 'done' ? `<div class="mv">${st === 'doing' ? `<button data-act="status" data-id="${t.id}" data-s="todo">← Назад</button>` : ''}<button data-act="status" data-id="${t.id}" data-s="${st === 'todo' ? 'doing' : 'done'}">${st === 'todo' ? 'В работу →' : 'Готово ✓'}</button></div>` : ''}</div>`).join('')}
         ${st !== 'done' ? `<button class="addq" style="color:var(--text3);padding:6px" data-act="add" data-status="${st}">${I('plus')} Добавить</button>` : ''}</div>`;
     }).join('') + `</div>`;
     return h + '</div></div>' + fab();
@@ -828,6 +853,10 @@ function vTasks() {
   }
 
   const o = { noList: isList };
+  const overN = open.filter(t => t.due && t.due < T).length;
+  if (key === 'today' && overN >= 2) h += `<button class="card" data-act="review" style="display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;margin-top:10px;text-align:left;background:var(--accent-soft);box-shadow:none"><span style="font-size:22px">🧹</span><span style="flex:1"><b>Разобрать просроченные: ${overN}</b><br><span class="hint">Перенести, выполнить или убрать дату — по одной</span></span>${I('right')}</button>`;
+  h += groupHtml('pin', '📌 Закреплено', open.filter(t => t.pinned), o);
+  open = open.filter(t => !t.pinned);
   if (S.settings.sort === 'priority') {
     [3, 2, 1, 0].forEach(p => { h += groupHtml('p' + p, PRIO[p], open.filter(t => t.priority === p), o); });
   } else if (S.settings.sort === 'title' || S.settings.sort === 'created') {
@@ -861,7 +890,7 @@ function vCal() {
   let g = WD.map(w => `<div class="wd">${w}</div>`).join('');
   for (let i = 0; i < cells; i++) {
     const d = addD(start, i), x = pd(d), items = (byDay[d] || []).filter(t => !t.done);
-    g += `<button class="d ${x.getMonth() !== m0.getMonth() ? 'out' : ''} ${d === T ? 'today' : ''} ${d === ui.calDay ? 'sel' : ''}" data-act="calDay" data-d="${d}">
+    g += `<button class="d ${x.getMonth() !== m0.getMonth() ? 'out' : ''} ${d === T ? 'today' : ''} ${d === ui.calDay ? 'sel' : ''}" data-act="calDay" data-d="${d}" data-drop="day">
       <span class="num">${x.getDate()}</span><span class="dots">${items.slice(0, 3).map(t => `<i style="--c:${t.priority ? `var(--p${t.priority})` : (listById(t.listId)?.color || 'var(--text3)')}"></i>`).join('')}</span>${items.length > 3 ? `<span class="more">+${items.length - 3}</span>` : ''}</button>`;
   }
   const sel = (byDay[ui.calDay] || []).sort((a, b) => a.done - b.done || cmp(a, b));
@@ -876,19 +905,17 @@ function vCal() {
 
 /* ================= MATRIX ================= */
 const QUADS = [
-  { id: 1, name: 'Срочно и важно', sub: 'Сделать сейчас', c: '#E5484D', test: (u, i) => u && i, preset: () => ({ priority: 3, due: today() }) },
-  { id: 2, name: 'Важно, не срочно', sub: 'Запланировать', c: '#F5A524', test: (u, i) => !u && i, preset: () => ({ priority: 3 }) },
-  { id: 3, name: 'Срочно, не важно', sub: 'Делегировать', c: '#4772FA', test: (u, i) => u && !i, preset: () => ({ priority: 1, due: today() }) },
-  { id: 4, name: 'Не срочно и не важно', sub: 'Отложить', c: '#6B7280', test: (u, i) => !u && !i, preset: () => ({ priority: 0 }) },
+  { id: 1, name: 'Срочно и важно', sub: 'Высокий приоритет — сделать сейчас', c: '#E5484D', p: 3 },
+  { id: 2, name: 'Важно, не срочно', sub: 'Средний приоритет — запланировать', c: '#F5A524', p: 2 },
+  { id: 3, name: 'Срочно, не важно', sub: 'Низкий приоритет — делегировать', c: '#4772FA', p: 1 },
+  { id: 4, name: 'Не срочно и не важно', sub: 'Без приоритета — отложить', c: '#6B7280', p: 0 },
 ];
-const isUrgent = t => !!t.due && t.due <= addD(today(), 1);
-const isImportant = t => t.priority >= 2;
 function vMatrix() {
   const open = live().filter(t => !t.done).sort(cmp);
   return topbar('Матрица Эйзенхауэра', `<button class="ib" data-act="mxHelp">${I('more')}</button>`, false) + `<div class="page"><div class="mx">` + QUADS.map(q => {
-    const items = open.filter(t => q.test(isUrgent(t), isImportant(t)));
-    return `<div class="q" style="--qc:${q.c}" data-q="${q.id}"><h3>${q.name}<small>${items.length}</small></h3>
-      <div class="ql">${items.map(t => taskRow(t, { noSwipe: true, compact: true, drag: true })).join('') || `<div class="hint" style="padding:6px 12px">${q.sub}</div>`}</div>
+    const items = open.filter(t => (t.priority || 0) === q.p);
+    return `<div class="q" style="--qc:${q.c}" data-q="${q.id}" data-drop="q"><h3>${q.name}<small>${items.length}</small></h3>
+      <div class="ql">${items.map(t => taskRow(t, { noSwipe: true, compact: true })).join('') || `<div class="hint" style="padding:6px 12px">${q.sub}</div>`}</div>
       <button class="addq" data-act="add" data-q="${q.id}">${I('plus')} Добавить</button></div>`;
   }).join('') + `</div></div>`;
 }
@@ -1057,10 +1084,24 @@ function closeSheet(silent) { const w = $('.sheetwrap'); if (!w) return; w.remov
 const sheetX = `<button class="ib" data-act="closeSheet" aria-label="Закрыть">${I('x')}</button>`;
 
 /* ---- quick add ---- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+function toggleMic() {
+  if (rec) { rec.stop(); return; }
+  try {
+    rec = new SR(); rec.lang = 'ru-RU'; rec.interimResults = true; rec.continuous = false;
+    const inp = $('#qa'), base = inp.value ? inp.value + ' ' : '';
+    rec.onresult = e => { inp.value = base + [...e.results].map(r => r[0].transcript).join(''); qaPreview(); };
+    rec.onend = () => { rec = null; $('#mic')?.classList.remove('on'); };
+    rec.onerror = e => { rec = null; $('#mic')?.classList.remove('on'); if (e.error === 'not-allowed') toast('Разреши доступ к микрофону'); };
+    rec.start(); $('#mic')?.classList.add('on'); buzz();
+  } catch (e) { rec = null; toast('Диктовка недоступна'); }
+}
+
 function openAdd(preset = {}) {
   ui.sheet = { type: 'add', preset, over: {} };
   const el = openSheet(`<div class="qa"><h2>Новая задача ${sheetX}</h2>
-    <input id="qa" class="main" placeholder="Например: завтра в 10 созвон #работа !1" autocomplete="off" enterkeyhint="done">
+    <div style="display:flex;gap:8px"><input id="qa" class="main" placeholder="Например: завтра в 10 созвон !1" autocomplete="off" enterkeyhint="done">${SR ? `<button class="circle" id="mic" data-act="mic" title="Надиктовать" style="flex:none;width:50px;height:50px">🎙️</button>` : ''}</div>
     <div class="chips" id="qachips"></div>
     <div style="display:flex;gap:8px"><button class="btn" style="flex:1" data-act="qaSave">Добавить</button></div>
     <p class="hint">Пиши обычным текстом: <code>сегодня</code> <code>завтра</code> <code>в пятницу</code> <code>25.12</code> <code>через 3 дня</code> <code>в 18:30</code> <code>каждый день</code> <code>по будням</code> · приоритет <code>!1</code> <code>!2</code> <code>!3</code> · список и теги подберутся сами ✨, а можно и вручную: <code>~Работа</code> <code>#дом</code></p></div>`);
@@ -1137,7 +1178,7 @@ function renderDetail() {
       <div class="subs">${t.subtasks.map(s => `<div class="s ${s.done ? 'done' : ''}"><button class="chk" data-act="subToggle" data-s="${s.id}">${CHK}</button><input type="text" data-sub="${s.id}" value="${esc(s.title)}"><button class="x" data-act="subDel" data-s="${s.id}">${I('x')}</button></div>`).join('')}
       <div class="s"><span style="width:19px;color:var(--text3);display:grid;place-items:center">${I('plus')}</span><input type="text" id="subnew" placeholder="Добавить подзадачу" enterkeyhint="done"></div></div></div>
     <div style="margin-top:10px"><textarea data-f="notes" placeholder="Заметки…">${esc(t.notes)}</textarea></div>
-    <div class="actions"><button data-act="dFocus">${I('play')}Фокус${t.pomos ? ` · 🍅${t.pomos}` : ''}</button><button data-act="dDup">${I('copy')}Дублировать</button><button class="red" data-act="dDel">${I('trash')}Удалить</button></div>
+    <div class="actions"><button data-act="dFocus">${I('play')}Фокус${t.pomos ? ` · 🍅${t.pomos}` : ''}</button><button data-act="dPin">${t.pinned ? '📌 Открепить' : '📌 Закрепить'}</button><button data-act="dShare">${I('up')}Поделиться</button><button data-act="dDup">${I('copy')}Дублировать</button><button class="red" data-act="dDel">${I('trash')}Удалить</button></div>
     <p class="hint" style="margin-top:12px">Создано ${new Date(t.createdAt).toLocaleString('ru', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${t.doneAt ? ' · выполнено ' + new Date(t.doneAt).toLocaleString('ru', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</p>`;
   const ta = $('textarea[data-f=title]', box); const fit = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; }; fit(); ta.addEventListener('input', fit);
   $('#subnew', box).addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.value.trim()) { t.subtasks.push({ id: uid(), title: e.target.value.trim(), done: false }); save(); renderDetail(); render(); $('#subnew').focus(); } });
@@ -1184,10 +1225,11 @@ function openListMenu() {
   const so = S.settings.sort, key = ui.list, isL = key.startsWith('list:');
   openSheet(`<h2>Вид и сортировка ${sheetX}</h2>
     <div class="hint" style="margin-bottom:6px">Сортировка</div>
-    <div class="seg">${[['smart', 'По дате'], ['priority', 'По приоритету'], ['title', 'По названию'], ['created', 'По созданию']].map(([k, n]) => `<button class="${so === k ? 'on' : ''}" data-act="sort" data-v="${k}">${n}</button>`).join('')}</div>
+    <div class="seg">${[['smart', 'По дате'], ['manual', 'Вручную'], ['priority', 'По приоритету'], ['title', 'По названию'], ['created', 'По созданию']].map(([k, n]) => `<button class="${so === k ? 'on' : ''}" data-act="sort" data-v="${k}">${n}</button>`).join('')}</div>
     <div class="actions" style="margin-top:18px">
       <button data-act="hideDone">${I('eye')}${S.settings.hideDone ? 'Показывать выполненные' : 'Скрыть выполненные'}</button>
       <button data-act="reschedule">${I('sun')}Просроченные → на сегодня</button>
+      <button data-act="shareList">${I('up')}Поделиться списком</button>
       ${isL ? `<button data-act="editList" data-id="${key.slice(5)}">${I('edit')}Изменить список</button>` : ''}
     </div>`);
 }
@@ -1221,6 +1263,26 @@ function openHabit(id) {
   openSheet('<div id="he"></div>'); ui.sheet.draw = draw; draw(); setTimeout(() => !id && $('#hname')?.focus(), 50);
 }
 
+/* ---- разбор просроченных ---- */
+function openReview() {
+  ui.sheet = { type: 'review' };
+  const el = openSheet('<div id="rv"></div>'); drawReview();
+}
+function drawReview() {
+  const box = $('#rv'); if (!box) return;
+  const T = today(), items = live().filter(t => !t.done && t.due && t.due < T).sort(cmp);
+  if (!items.length) { box.innerHTML = `<h2>Готово ${sheetX}</h2><div class="empty" style="padding:30px"><div class="big">✨</div><b>Просроченных больше нет</b></div>`; return; }
+  box.innerHTML = `<h2>Разобрать просроченные · ${items.length} ${sheetX}</h2>` + items.map(t => `<div class="card" style="padding:12px 14px;margin-bottom:8px">
+    <div style="font-weight:600;margin-bottom:2px">${esc(t.title)}</div><div class="hint" style="margin-bottom:8px">было на ${fmtDate(t.due).replace(/^./, c => c.toLowerCase())}${t.time ? ' ' + t.time : ''} · ${esc(listById(t.listId)?.name || '')}</div>
+    <div class="seg"><button data-act="rv" data-id="${t.id}" data-v="today">Сегодня</button><button data-act="rv" data-id="${t.id}" data-v="tom">Завтра</button><button data-act="rv" data-id="${t.id}" data-v="week">След. пн</button><button data-act="rv" data-id="${t.id}" data-v="none">Без даты</button><button data-act="rv" data-id="${t.id}" data-v="done">✓ Готово</button></div></div>`).join('')
+    + `<button class="btn" style="width:100%;margin-top:6px" data-act="reschedule">Всё на сегодня</button>`;
+}
+async function shareText(title, text) {
+  try { if (navigator.share) { await navigator.share({ title, text }); return; } } catch (e) { if (e.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(text); toast('Скопировано'); } catch (e) { toast('Не удалось поделиться'); }
+}
+const taskLine = t => `${t.done ? '✅' : '◻️'} ${t.title}${t.due ? ` — ${fmtDate(t.due)}${t.time ? ' ' + t.time : ''}` : ''}` + t.subtasks.map(x => `\n    ${x.done ? '✓' : '·'} ${x.title}`).join('');
+
 /* ---- focus task picker ---- */
 function openPicker() {
   ui.sheet = { type: 'pick' };
@@ -1234,6 +1296,9 @@ function openSettings() {
   const s = S.settings, standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   const np = 'Notification' in window ? Notification.permission : 'unsupported';
   openSheet(`<h2>Настройки ${sheetX}</h2>
+    <div class="panel" style="margin-top:0;background:var(--surface2);box-shadow:none"><h3>☁️ Синхронизация</h3>${SY.on
+      ? `<div class="hint" style="margin-bottom:10px">${SY.need ? '⚠️ Нужно снова войти в Google' : '✅ Включена'}${SY.email ? ' · ' + esc(SY.email) : ''}${SY.last ? '<br>Последняя: ' + new Date(SY.last).toLocaleString('ru', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</div><div class="actions" style="margin-top:0">${SY.need ? `<button data-act="gLogin">Войти снова</button>` : `<button data-act="syncNow">${I('reset')}Синхронизировать сейчас</button>`}<button class="red" data-act="gLogout">Выключить</button></div>`
+      : `<div class="hint" style="margin-bottom:10px">Задачи, списки и привычки будут одинаковыми на телефоне и ноутбуке. Хранятся в скрытой папке твоего Google Drive — другие файлы приложение не видит.</div><button class="btn sm" data-act="gLogin">Войти через Google</button>`}</div>
     <div class="row"><label>Акцент</label><div class="f swatches">${COLORS.slice(0, 8).map(c => `<button class="${s.accent === c ? 'on' : ''}" style="--c:${c}" data-act="setAccent" data-v="${c}"></button>`).join('')}</div></div>
     <div class="row"><label>Цель в день</label><div class="f"><input type="number" min="1" max="50" value="${s.goal}" data-set="goal" ><span class="hint" style="align-self:center">задач</span></div></div>
     <div class="row"><label>Помодоро</label><div class="f"><input type="number" min="5" max="90" value="${s.pomo}" data-set="pomo"><input type="number" min="1" max="30" value="${s.short}" data-set="short"><input type="number" min="5" max="60" value="${s.long}" data-set="long"></div></div>
@@ -1265,6 +1330,151 @@ function applyTheme() {
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => render());
 
+/* ================= Синхронизация через Google Drive (скрытая папка приложения) ================= */
+const GCLIENT = '541432233835-1siplrar98ubutkshremrm9nbcrmrasv.apps.googleusercontent.com';
+const GSCOPE = 'https://www.googleapis.com/auth/drive.appdata openid email';
+const GREDIRECT = location.hostname === 'karinakaramel.github.io' ? 'https://karinakaramel.github.io/dela/' : location.origin + location.pathname;
+const SYKEY = 'dela.sync';
+let SY = (() => { try { return JSON.parse(localStorage.getItem(SYKEY)) || {}; } catch (e) { return {}; } })();
+const sySave = () => { try { localStorage.setItem(SYKEY, JSON.stringify(SY)); } catch (e) { } };
+const tokenOk = () => SY.token && SY.exp > Date.now() + 60e3;
+let syState = ''; // '', 'sync', 'err'
+
+/* --- отметки изменений: у каждой записи поле u (время правки), удалённые — в S.tomb --- */
+const COLS = ['tasks', 'lists', 'habits', 'focus'];
+let lastSig = null;
+function sigOf() {
+  const sig = {};
+  for (const c of COLS) for (const x of S[c]) { if (!x.id) x.id = uid(); const { u, ...rest } = x; sig[c + ':' + x.id] = JSON.stringify(rest); }
+  sig.settings = JSON.stringify(S.settings);
+  return sig;
+}
+function stamp() {
+  const now = Date.now(), sig = sigOf();
+  S.tomb = S.tomb || {};
+  for (const c of COLS) for (const x of S[c]) { const k = c + ':' + x.id; if (lastSig && lastSig[k] !== sig[k]) x.u = now; else if (!x.u) x.u = 1; }
+  if (lastSig && lastSig.settings !== sig.settings) S.settingsU = now;
+  if (lastSig) for (const k in lastSig) if (k !== 'settings' && !(k in sig)) S.tomb[k] = now;
+  lastSig = sig;
+}
+
+function mergeState(R) {
+  const tomb = { ...(S.tomb || {}) };
+  for (const [k, v] of Object.entries(R.tomb || {})) tomb[k] = Math.max(tomb[k] || 0, v);
+  for (const c of COLS) {
+    const m = new Map(S[c].map(x => [x.id, x]));
+    for (const r of R[c] || []) { const l = m.get(r.id); if (!l || (r.u || 0) > (l.u || 0)) m.set(r.id, r); }
+    S[c] = [...m.values()].filter(x => !(tomb[c + ':' + x.id] >= (x.u || 0)));
+  }
+  if ((R.settingsU || 0) > (S.settingsU || 0)) { S.settings = { ...S.settings, ...R.settings }; S.settingsU = R.settingsU; }
+  for (const f of ['tagsV2', 'tagsV3']) if (R[f]) S[f] = R[f];
+  // дубли, которые появляются при первом входе с двух устройств
+  const seenH = new Map();
+  for (const h of [...S.habits].sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || '') || a.id.localeCompare(b.id))) {
+    const k = h.name.trim().toLowerCase(), first = seenH.get(k);
+    if (first) { first.log = { ...h.log, ...first.log }; first.u = Date.now(); tomb['habits:' + h.id] = Date.now(); } else seenH.set(k, h);
+  }
+  S.habits = S.habits.filter(h => !(tomb['habits:' + h.id] >= (h.u || 0)));
+  const hello = S.tasks.filter(t => t.title.startsWith('👋 Добро пожаловать')).sort((a, b) => a.id.localeCompare(b.id));
+  hello.slice(1).forEach(t => { tomb['tasks:' + t.id] = Date.now(); });
+  S.tasks = S.tasks.filter(t => !(tomb['tasks:' + t.id] >= (t.u || 0)));
+  const seenL = new Map();
+  for (const l of [...S.lists].sort((a, b) => a.id.localeCompare(b.id))) {
+    const k = l.name.toLowerCase(), first = seenL.get(k);
+    if (first) { S.tasks.forEach(t => { if (t.listId === l.id) { t.listId = first.id; t.u = Date.now(); } }); tomb['lists:' + l.id] = Date.now(); } else seenL.set(k, l);
+  }
+  S.lists = S.lists.filter(l => !(tomb['lists:' + l.id] >= (l.u || 0)));
+  // чистим старые надгробия (> 60 дней)
+  const old = Date.now() - 60 * 864e5; for (const k in tomb) if (tomb[k] < old) delete tomb[k];
+  S.tomb = tomb;
+}
+const payload = () => ({ version: 1, lists: S.lists, tasks: S.tasks, habits: S.habits, focus: S.focus, settings: S.settings, settingsU: S.settingsU || 0, tomb: S.tomb || {}, tagsV2: S.tagsV2, tagsV3: S.tagsV3 });
+
+/* --- Google: вход через перенаправление (работает и в приложении на экране «Домой») --- */
+function gLogin(silent) {
+  const q = new URLSearchParams({ client_id: GCLIENT, redirect_uri: GREDIRECT, response_type: 'token', scope: GSCOPE, include_granted_scopes: 'true', state: silent ? 'dela-silent' : 'dela' });
+  if (silent) { q.set('prompt', 'none'); if (SY.email) q.set('login_hint', SY.email); SY.silentAt = Date.now(); } else q.set('prompt', SY.email ? 'consent' : 'select_account consent');
+  sySave(); persist(true);
+  location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + q;
+}
+function gLogout() { SY = {}; sySave(); toast('Синхронизация выключена. Задачи остались на этом устройстве'); render(); }
+async function gfetch(url, opt = {}) {
+  const r = await fetch(url, { ...opt, headers: { Authorization: 'Bearer ' + SY.token, ...(opt.headers || {}) } });
+  if (!r.ok) { const e = new Error('HTTP ' + r.status); e.status = r.status; throw e; }
+  return r;
+}
+async function findFile() {
+  const r = await gfetch(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${encodeURIComponent("name='dela.json'")}&fields=files(id,modifiedTime)&orderBy=modifiedTime desc`);
+  const j = await r.json(); return j.files?.[0]?.id || null;
+}
+async function upload(id, data) {
+  const body = JSON.stringify(data);
+  if (id) { await gfetch(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body }); return id; }
+  const r = await gfetch('https://www.googleapis.com/drive/v3/files?fields=id', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'dela.json', parents: ['appDataFolder'], mimeType: 'application/json' }) });
+  const nid = (await r.json()).id;
+  await gfetch(`https://www.googleapis.com/upload/drive/v3/files/${nid}?uploadType=media`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body });
+  return nid;
+}
+
+let syncing = false, syncAgain = false, syncT;
+function syncSoon() { if (!SY.on) return; clearTimeout(syncT); syncT = setTimeout(syncNow, 2500); }
+async function syncNow(manual) {
+  if (!SY.on) return;
+  if (!tokenOk()) { SY.need = true; sySave(); setSync('err'); if (manual) gLogin(false); return; }
+  if (syncing) { syncAgain = true; return; }
+  syncing = true; setSync('sync');
+  try {
+    persist(true);
+    let id = SY.fileId || await findFile(), remote = null;
+    if (id) { try { remote = await (await gfetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`)).json(); } catch (e) { if (e.status === 404) { id = await findFile(); if (id) remote = await (await gfetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`)).json(); } else throw e; } }
+    const before = JSON.stringify(payload());
+    if (remote) { mergeState(remote); lastSig = sigOf(); }
+    const after = payload(), afterJ = JSON.stringify(after);
+    if (afterJ !== before) { localStorage.setItem(KEY, JSON.stringify(S)); render(); }
+    if (!remote || JSON.stringify({ ...remote }) !== afterJ) id = await upload(id, after);
+    SY.fileId = id; SY.last = Date.now(); SY.need = false; SY.err = null; setSync('');
+    if (manual) toast('Синхронизировано ✓');
+  } catch (e) {
+    if (e.status === 401 || e.status === 403) { SY.token = null; SY.need = true; } else SY.err = e.message;
+    setSync('err'); if (manual) toast(SY.need ? 'Нужно снова войти в Google' : 'Нет связи с Google Drive, попробую позже');
+  } finally { syncing = false; sySave(); if (syncAgain) { syncAgain = false; syncSoon(); } }
+}
+function setSync(st) { syState = st; const b = $('#syncBtn'); if (b) { b.className = 'ib ' + (st === 'sync' ? 'spin' : st === 'err' ? 'warn' : ''); b.title = syncLabel(); } }
+function syncLabel() {
+  if (!SY.on) return 'Синхронизация выключена';
+  if (SY.need) return 'Нужно снова войти в Google';
+  if (syState === 'sync') return 'Синхронизация…';
+  return SY.last ? 'Синхронизировано в ' + new Date(SY.last).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }) : 'Синхронизация включена';
+}
+const syncButton = () => SY.on ? `<button class="ib ${SY.need ? 'warn' : ''}" id="syncBtn" data-act="syncNow" title="${syncLabel()}">${I('cloud')}</button>` : '';
+
+/* --- запуск --- */
+function syncInit() {
+  if (location.hash.includes('access_token=') || location.hash.includes('error=')) {
+    const h = new URLSearchParams(location.hash.slice(1));
+    history.replaceState(null, '', location.pathname + location.search);
+    if (h.get('access_token')) {
+      SY.token = h.get('access_token'); SY.exp = Date.now() + (+h.get('expires_in') || 3600) * 1000;
+      const first = !SY.on; SY.on = true; SY.need = false; sySave();
+      if (first) setTimeout(() => toast('☁️ Синхронизация включена'), 600);
+      fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: 'Bearer ' + SY.token } }).then(r => r.json()).then(j => { if (j.email) { SY.email = j.email; sySave(); } }).catch(() => { });
+    } else if (SY.on) { SY.need = true; sySave(); }
+  }
+  lastSig = sigOf();
+  for (const c of COLS) for (const x of S[c]) if (!x.u) x.u = 1;
+}
+function syncStart() {
+  if (!SY.on) return;
+  if (!tokenOk()) { trySilent(); return; }
+  syncNow();
+  setInterval(() => { if (!document.hidden) syncNow(); }, 60000);
+}
+function trySilent() {
+  if (!SY.on || tokenOk() || $('.sheetwrap')) return;
+  if (Date.now() - (SY.silentAt || 0) > 10 * 60e3) gLogin(true); else { SY.need = true; sySave(); setSync('err'); }
+}
+function syncOnVisible() { if (!SY.on) return; if (tokenOk()) syncNow(); else trySilent(); }
+
 /* ================= actions ================= */
 function addPreset() {
   const k = ui.list, T = today();
@@ -1291,7 +1501,7 @@ const ACT = {
   add: a => {
     let p = addPreset();
     if (a.dataset.due) p.due = a.dataset.due;
-    if (a.dataset.q) p = { ...p, ...QUADS[a.dataset.q - 1].preset() };
+    if (a.dataset.q) p = { ...p, priority: QUADS[a.dataset.q - 1].p };
     if (a.dataset.status) p.status = a.dataset.status;
     openAdd(p);
   },
@@ -1300,7 +1510,13 @@ const ACT = {
   qaDue: a => { ui.sheet.over.due = a.dataset.v || null; qaPreview(); $('#qa').focus(); },
   qaPrio: () => { const d = qaData(); ui.sheet.over.priority = (d.priority + 1) % 4; qaPreview(); },
   status: a => { const t = task(a.dataset.id); if (a.dataset.s === 'done') return toggleTask(t.id); t.status = a.dataset.s; save(); render(); },
-  reschedule: () => { snap(); const T = today(); let n = 0; live().forEach(t => { if (!t.done && t.due && t.due < T) { t.due = T; n++; } }); save(); closeSheet(true); render(); toast(n ? `Перенесено на сегодня: ${n}` : 'Просроченных нет', !!n); },
+  review: () => openReview(),
+  rv: a => { const t = task(a.dataset.id), v = a.dataset.v, T = today(); snap(); if (v === 'done') { toggleTask(t.id); setTimeout(drawReview, 320); return; } t.due = v === 'today' ? T : v === 'tom' ? addD(T, 1) : v === 'week' ? nextWd(T, 0) : null; if (!t.due) t.time = null; save(); render(); drawReview(); },
+  mic: () => toggleMic(),
+  shareList: () => { closeSheet(true); const items = live().filter(t => !t.done && scopeOf(ui.list)(t)).sort(cmp); if (!items.length) return toast('Список пуст'); shareText(scopeName(ui.list), `${scopeName(ui.list)}\n\n` + items.map(taskLine).join('\n')); },
+  dShare: () => { const t = task(ui.sheet.id); shareText(t.title, taskLine(t) + (t.notes ? '\n\n' + t.notes : '')); },
+  dPin: () => { const t = task(ui.sheet.id); t.pinned = !t.pinned; save(); renderDetail(); render(); toast(t.pinned ? '📌 Закреплено вверху списка' : 'Откреплено'); },
+  reschedule: () => { snap(); const T = today(); let n = 0; live().forEach(t => { if (!t.done && t.due && t.due < T) { t.due = T; n++; } }); save(); if (ui.sheet?.type === 'review') drawReview(); else closeSheet(true); render(); toast(n ? `Перенесено на сегодня: ${n}` : 'Просроченных нет', !!n); },
   restore: a => { const t = task(a.dataset.id); t.deleted = false; save(); render(); toast('Восстановлено'); },
   emptyTrash: () => { snap(); S.tasks = S.tasks.filter(t => !t.deleted); save(); render(); toast('Корзина очищена', true); },
   sort: a => { S.settings.sort = a.dataset.v; save(); closeSheet(true); render(); },
@@ -1335,7 +1551,7 @@ const ACT = {
   calNav: a => { ui.calMonth = addM(ui.calMonth, +a.dataset.n); render(); },
   calDay: a => { ui.calDay = a.dataset.d; const m = a.dataset.d.slice(0, 8) + '01'; if (m !== ui.calMonth) ui.calMonth = m; render(); },
   calToday: () => { ui.calDay = today(); ui.calMonth = today().slice(0, 8) + '01'; render(); },
-  mxHelp: () => { ui.sheet = { type: 'help' }; openSheet(`<h2>Как работает матрица ${sheetX}</h2><p class="hint" style="font-size:14px">Задачи распределяются автоматически:<br><br><b>Важно</b> — высокий или средний приоритет.<br><b>Срочно</b> — срок сегодня, завтра или уже просрочен.<br><br>На компьютере задачи можно перетаскивать между квадрантами — приоритет и дата поменяются сами. На телефоне открой задачу и поменяй приоритет или дату.</p>`); },
+  mxHelp: () => { ui.sheet = { type: 'help' }; openSheet(`<h2>Как работает матрица ${sheetX}</h2><p class="hint" style="font-size:14px">Квадрант = приоритет задачи (как в TickTick):<br><br>🔴 <b>Срочно и важно</b> — высокий<br>🟠 <b>Важно, не срочно</b> — средний<br>🔵 <b>Срочно, не важно</b> — низкий<br>⚪️ <b>Не срочно и не важно</b> — без приоритета<br><br>Перетащи задачу в другой квадрант (на телефоне — зажми и тяни), и приоритет поменяется сам.</p>`); },
   // focus
   fstart: fStart,
   freset: () => fSet(S.timer.mode),
@@ -1359,6 +1575,9 @@ const ACT = {
   hDel: () => { if (!ui.sheet.confirm) { ui.sheet.confirm = 1; return ui.sheet.draw(); } snap(); S.habits = S.habits.filter(h => h.id !== ui.sheet.id); save(); closeSheet(); toast('Привычка удалена', true); },
   // settings
   settings: openSettings,
+  gLogin: () => gLogin(false),
+  gLogout: () => { closeSheet(true); gLogout(); },
+  syncNow: () => syncNow(true),
   setAccent: a => { S.settings.accent = a.dataset.v; save(); render(); openSettings(); },
   setSound: a => { S.settings.sound = a.dataset.v === '1'; save(); openSettings(); if (S.settings.sound) chime(); },
   enableNotif: async () => { try { await Notification.requestPermission(); } catch (e) { } openSettings(); },
@@ -1398,26 +1617,101 @@ document.addEventListener('touchend', () => {
 });
 function bindSwipes() { }
 
-/* ================= drag & drop (desktop) ================= */
-let dragId = null;
-document.addEventListener('dragstart', e => { const t = e.target.closest?.('.task[draggable]'); if (!t) return; dragId = t.dataset.id; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', dragId); t.style.opacity = .5; });
-document.addEventListener('dragend', e => { e.target.style && (e.target.style.opacity = ''); $$('.drop').forEach(x => x.classList.remove('drop')); });
-document.addEventListener('dragover', e => { const z = e.target.closest('.col,.q'); if (!z || !dragId) return; e.preventDefault(); $$('.drop').forEach(x => x !== z && x.classList.remove('drop')); z.classList.add('drop'); });
-document.addEventListener('drop', e => {
-  const z = e.target.closest('.col,.q'); if (!z || !dragId) return; e.preventDefault();
-  const t = task(dragId); dragId = null; if (!t) return; snap();
-  if (z.dataset.col) {
-    const s = z.dataset.col;
-    if (s === 'done') { if (!t.done) return toggleTask(t.id); }
-    else { if (t.done) { t.done = false; t.doneAt = null; } t.status = s; }
-  } else {
-    const q = +z.dataset.q, T = today(), U = isUrgent(t), Im = isImportant(t);
-    const wantU = q === 1 || q === 3, wantI = q === 1 || q === 2;
-    if (wantI && !Im) t.priority = 3; if (!wantI && Im) t.priority = q === 3 ? 1 : 0;
-    if (wantU && !U) t.due = T; if (!wantU && U) t.due = addD(T, 2);
+/* ================= drag & drop (мышь + долгое нажатие на телефоне) ================= */
+let dd = null; // { id, el, ghost, x, y, started, timer, target }
+const GROUP_DUE = { today: 0, tom: 1, week: 2, later: 8 };
+function ddStart(x, y) {
+  const el = dd.el; dd.started = true; sw = null; buzz();
+  const r = el.getBoundingClientRect();
+  const g = el.cloneNode(true); g.className += ' ghost';
+  Object.assign(g.style, { position: 'fixed', left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', zIndex: 90, pointerEvents: 'none', boxShadow: 'var(--shadow)', borderRadius: '12px', opacity: .95, transform: 'scale(1.03) rotate(-1deg)', background: 'var(--surface)' });
+  dd.dx = x - r.left; dd.dy = y - r.top; dd.ghost = g; document.body.appendChild(g);
+  el.style.opacity = .35; document.body.classList.add('dragging');
+  if (ui.side) { ui.side = false; $('.side').classList.remove('open'); $('.scrim').classList.remove('on'); }
+}
+function ddMove(x, y) {
+  if (!dd?.started) return;
+  dd.ghost.style.left = (x - dd.dx) + 'px'; dd.ghost.style.top = (y - dd.dy) + 'px';
+  const under = document.elementFromPoint(x, y);
+  let z = under?.closest('[data-drop]');
+  if (z && z.dataset.drop === 'task' && !z.dataset.g) z = z.parentElement?.closest('[data-drop]');
+  if (z && z.dataset.drop === 'task' && z.dataset.id === dd.id) z = null;
+  $$('.drop').forEach(e => e !== z && e.classList.remove('drop', 'dropAfter'));
+  if (z) { z.classList.add('drop'); if (z.dataset.drop === 'task') { const r = z.getBoundingClientRect(); z.classList.toggle('dropAfter', y > r.top + r.height / 2); } }
+  dd.target = z;
+  // автопрокрутка
+  const pg = $('main .page'), ql = under?.closest('.ql,.kan');
+  if (pg) { if (y < 90) pg.scrollTop -= 12; else if (y > innerHeight - 110) pg.scrollTop += 12; }
+  if (ql?.classList.contains('kan')) { if (x < 40) ql.scrollLeft -= 14; else if (x > innerWidth - 40) ql.scrollLeft += 14; }
+}
+function ddEnd() {
+  if (!dd) return; clearTimeout(dd.timer);
+  const { started, target: z, id, el, ghost } = dd; dd = null;
+  if (!started) return;
+  ui.swiped = Date.now(); // гасим клик после перетаскивания
+  ghost.remove(); el.style.opacity = ''; document.body.classList.remove('dragging');
+  $$('.drop').forEach(e => e.classList.remove('drop', 'dropAfter'));
+  const t = task(id); if (!t || !z) return;
+  snap(); const T = today(); let msg = 'Задача перемещена';
+  const kind = z.dataset.drop;
+  if (kind === 'q') { const q = QUADS[+z.dataset.q - 1]; t.priority = q.p; msg = `Приоритет: ${PRIO[q.p]}`; }
+  else if (kind === 'col') { const s2 = z.dataset.col; if (s2 === 'done') { if (!t.done) return toggleTask(t.id); } else { if (t.done) { t.done = false; t.doneAt = null; } t.status = s2; } msg = s2 === 'doing' ? 'В процессе' : 'Нужно сделать'; }
+  else if (kind === 'day') { t.due = z.dataset.d; delete S.notified[t.id]; ui.calDay = t.due; msg = `Перенесено на ${fmtDate(t.due)}`; }
+  else if (kind === 'nav') {
+    const k = z.dataset.k;
+    if (k === 'inbox') t.listId = 'inbox'; else if (k.startsWith('list:')) t.listId = k.slice(5);
+    else if (k === 'today') t.due = T; else if (k === 'next7') t.due = addD(T, 1);
+    else if (k === 'important') t.priority = 3; else if (k.startsWith('tag:')) { if (!t.tags.includes(k.slice(4))) t.tags.push(k.slice(4)); }
+    else if (k === 'trash') { save(); return deleteTask(t.id); } else if (k === 'done') { save(); return toggleTask(t.id); }
+    msg = `→ ${scopeName(k)}`;
   }
-  save(); render(); toast('Задача перемещена', true);
+  else if (kind === 'group' || kind === 'task') {
+    const g = z.dataset.g;
+    applyGroup(t, g);
+    if (kind === 'task') { // ручной порядок
+      const other = task(z.dataset.id), after = z.classList.contains('dropAfter') || false;
+      const sib = $$(`main .task[data-g="${g}"]`).map(e => e.dataset.id).filter(x => x !== t.id);
+      let idx = sib.indexOf(other?.id); if (idx < 0) idx = sib.length; else if (z.getBoundingClientRect && after) idx++;
+      sib.splice(idx, 0, t.id); sib.forEach((x, i) => { const y = task(x); if (y) y.order = i; });
+      if (S.settings.sort !== 'manual' && !['priority', 'title', 'created'].includes(S.settings.sort)) S.settings.sort = 'manual';
+      if (!['priority'].includes(S.settings.sort)) msg = 'Порядок изменён';
+    } else msg = 'Задача перемещена';
+  }
+  save(); render(); toast(msg, true);
+}
+function applyGroup(t, g) {
+  const T = today();
+  if (!g || g === 'pin' || g === 'search' || g === 'doneSec') return;
+  if (g === 'over') return;
+  if (g === 'nodate') { t.due = null; t.time = null; return; }
+  if (g in GROUP_DUE) { const cur = t.due ? bucket(t)[0] : 'nodate'; if (cur !== g) t.due = addD(T, GROUP_DUE[g]); return; }
+  if (/^d\d$/.test(g)) { t.due = addD(T, +g.slice(1)); return; }
+  if (/^p\d$/.test(g)) { t.priority = +g.slice(1); return; }
+  if (g === 'all') return;
+}
+// мышь
+document.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  const el = e.target.closest('main .task[data-id]'); if (!el || e.target.closest('.chk,button,input,textarea,select')) return;
+  dd = { id: el.dataset.id, el, x: e.clientX, y: e.clientY, started: false };
 });
+document.addEventListener('mousemove', e => { if (!dd) return; if (!dd.started && Math.hypot(e.clientX - dd.x, e.clientY - dd.y) > 6) ddStart(e.clientX, e.clientY); ddMove(e.clientX, e.clientY); });
+document.addEventListener('mouseup', () => ddEnd());
+// палец: зажать ~0,35 с
+document.addEventListener('touchstart', e => {
+  const el = e.target.closest('main .task[data-id]'); if (!el || e.target.closest('.chk,button,input,textarea,select') || e.touches.length > 1) return;
+  const x = e.touches[0].clientX, y = e.touches[0].clientY;
+  dd = { id: el.dataset.id, el, x, y, started: false };
+  dd.timer = setTimeout(() => { if (dd && !dd.started) ddStart(dd.x, dd.y); }, 380);
+}, { passive: true });
+document.addEventListener('touchmove', e => {
+  if (!dd) return; const x = e.touches[0].clientX, y = e.touches[0].clientY;
+  if (!dd.started) { if (Math.hypot(x - dd.x, y - dd.y) > 9) { clearTimeout(dd.timer); dd = null; } return; }
+  e.preventDefault(); ddMove(x, y);
+}, { passive: false });
+document.addEventListener('touchend', () => ddEnd());
+document.addEventListener('touchcancel', () => { if (dd) { dd.target = null; ddEnd(); } });
+document.addEventListener('contextmenu', e => { if (dd?.started || e.target.closest('main .task')) e.preventDefault(); });
 function bindDrag() { }
 
 /* ================= keyboard (desktop) ================= */
@@ -1431,8 +1725,8 @@ document.addEventListener('keydown', e => {
 
 /* ================= init ================= */
 let lastDay = today();
-const flush = () => { clearTimeout(saveT); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { } };
-document.addEventListener('visibilitychange', () => { if (document.hidden) return flush(); if (today() !== lastDay) { lastDay = today(); ui.calDay = today(); ui.calMonth = today().slice(0, 8) + '01'; } render(); reminderLoop(); });
+const flush = () => persist(true);
+document.addEventListener('visibilitychange', () => { if (document.hidden) return flush(); if (today() !== lastDay) { lastDay = today(); ui.calDay = today(); ui.calMonth = today().slice(0, 8) + '01'; } render(); reminderLoop(); syncOnVisible(); });
 window.addEventListener('pagehide', flush);
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => { });
 if (!S.tagsV3) { S.tagsV3 = 1; S.tagsV2 = 1; S.tasks.forEach(t => {
@@ -1442,8 +1736,10 @@ if (!S.tagsV3) { S.tagsV3 = 1; S.tagsV2 = 1; S.tasks.forEach(t => {
   if (!manual.length || auto.length) { t.autoTags = guessTags(t.title, listById(t.listId)?.name).filter(g => !manual.includes(g)); t.tags = [...manual, ...t.autoTags]; }
 }); save(); }
 if (!S.tagsV2) { S.tagsV2 = 1; S.tasks.forEach(t => { if (!t.deleted && !t.done && !(t.tags || []).length && t.title && !t.title.startsWith('👋')) { t.tags = guessTags(t.title, listById(t.listId)?.name); t.autoTags = [...t.tags]; } }); save(); }
+syncInit();
 render();
 reminderLoop();
+syncStart();
 </script>
 </body>
 </html>
