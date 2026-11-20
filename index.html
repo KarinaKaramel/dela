@@ -330,6 +330,7 @@ body.dragging,body.dragging *{cursor:grabbing!important}
 .st.done span{text-decoration:line-through;color:var(--text3)}
 .smore{font-size:12.5px;color:var(--accent);text-align:left;padding:2px 0 0 27px}
 .toast{width:max-content}
+.q .st{font-size:13px}.q .subl{margin-top:5px}
 </style>
 </head>
 <body>
@@ -729,7 +730,7 @@ function taskRow(t, o = {}) {
   } else if (t.time && !o.noTime) meta.push(`<span>${I('clock')}${t.time}</span>`);
   if (t.pinned) meta.push(`<span style="color:var(--accent)">📌</span>`);
   if (t.repeat) meta.push(`<span title="${REPEAT[t.repeat]}">${I('repeat')}</span>`);
-  if (t.subtasks.length && (o.compact || t.done)) meta.push(`<span>${I('sub')}${t.subtasks.filter(s => s.done).length}/${t.subtasks.length}</span>`);
+  if (t.subtasks.length && t.done) meta.push(`<span>${I('sub')}${t.subtasks.filter(s => s.done).length}/${t.subtasks.length}</span>`);
   if (t.notes) meta.push(`<span>${I('note')}</span>`);
   if (t.pomos) meta.push(`<span>🍅 ${t.pomos}</span>`);
   if (!o.noList && t.listId !== 'inbox') { const l = listById(t.listId); if (l) meta.push(`<span><i class="dot" style="--c:${l.color};width:7px;height:7px"></i>${esc(l.name)}</span>`); }
@@ -743,7 +744,7 @@ function taskRow(t, o = {}) {
   return `<div class="swipe"><div class="bgR">${I('check')} Готово</div><div class="bgL">Удалить ${I('trash')}</div>${inner}</div>`;
 }
 function subList(t, o) {
-  if (!t.subtasks.length || t.done || o.compact) return '';
+  if (!t.subtasks.length || t.done) return '';
   const n = t.subtasks.filter(x => x.done).length, open = ui.subOpen?.[t.id], max = 6;
   const shown = open ? t.subtasks : t.subtasks.slice(0, max);
   return `<div class="subl"><div class="sbar"><i style="width:${n / t.subtasks.length * 100}%"></i></div>`
