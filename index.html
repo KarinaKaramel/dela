@@ -318,6 +318,18 @@ body.dragging,body.dragging *{cursor:grabbing!important}
 .ib.spin svg{animation:spin 1s linear infinite;color:var(--accent)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .ib.warn{color:var(--p2)}
+.subl{margin-top:8px;display:flex;flex-direction:column;gap:1px}
+.sbar{height:3px;border-radius:2px;background:var(--surface2);overflow:hidden;margin-bottom:5px;max-width:160px}
+.sbar i{display:block;height:100%;background:var(--ok);border-radius:2px;transition:width .25s}
+.st{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--text2);padding:3px 0}
+.st .schk{width:18px;height:18px;border-radius:50%;border:1.7px solid var(--text3);display:grid;place-items:center;flex:none;transition:transform .15s}
+.st .schk:active{transform:scale(.85)}
+.st .schk svg{width:11px;height:11px;stroke:#fff;stroke-width:3.4;fill:none;opacity:0}
+.st.done .schk{background:var(--ok);border-color:var(--ok)}
+.st.done .schk svg{opacity:1}
+.st.done span{text-decoration:line-through;color:var(--text3)}
+.smore{font-size:12.5px;color:var(--accent);text-align:left;padding:2px 0 0 27px}
+.toast{width:max-content}
 </style>
 </head>
 <body>
@@ -631,7 +643,7 @@ function toggleTask(id, el) {
     delete S.notified[t.id];
     toast(`Готово ✓ Следующая: ${fmtDate(t.due)}`, true);
   } else {
-    t.done = true; t.doneAt = Date.now(); t.status = 'done';
+    t.done = true; t.doneAt = Date.now(); t.status = 'done'; t.subtasks.forEach(x => x.done = true);
     toast('Задача выполнена', true);
   }
   if (el) { el.classList.add('pop', 'done'); }
@@ -717,18 +729,26 @@ function taskRow(t, o = {}) {
   } else if (t.time && !o.noTime) meta.push(`<span>${I('clock')}${t.time}</span>`);
   if (t.pinned) meta.push(`<span style="color:var(--accent)">📌</span>`);
   if (t.repeat) meta.push(`<span title="${REPEAT[t.repeat]}">${I('repeat')}</span>`);
-  if (t.subtasks.length) meta.push(`<span>${I('sub')}${t.subtasks.filter(s => s.done).length}/${t.subtasks.length}</span>`);
+  if (t.subtasks.length && (o.compact || t.done)) meta.push(`<span>${I('sub')}${t.subtasks.filter(s => s.done).length}/${t.subtasks.length}</span>`);
   if (t.notes) meta.push(`<span>${I('note')}</span>`);
   if (t.pomos) meta.push(`<span>🍅 ${t.pomos}</span>`);
   if (!o.noList && t.listId !== 'inbox') { const l = listById(t.listId); if (l) meta.push(`<span><i class="dot" style="--c:${l.color};width:7px;height:7px"></i>${esc(l.name)}</span>`); }
   t.tags.forEach(g => meta.push(`<span class="tag">#${esc(g)}</span>`));
   const inner = `<div class="task ${pc} ${t.done ? 'done' : ''}" data-id="${t.id}" data-drop="task" data-g="${o.g || ''}">
     <button class="chk" data-act="toggle" data-id="${t.id}" aria-label="Выполнить">${CHK}</button>
-    <div class="tb" data-act="open" data-id="${t.id}"><div class="tt">${esc(t.title) || '<span style="color:var(--text3)">Без названия</span>'}</div>${meta.length ? `<div class="tm">${meta.join('')}</div>` : ''}</div>
+    <div class="tb" data-act="open" data-id="${t.id}"><div class="tt">${esc(t.title) || '<span style="color:var(--text3)">Без названия</span>'}</div>${meta.length ? `<div class="tm">${meta.join('')}</div>` : ''}${subList(t, o)}</div>
     ${t.priority && !o.compact ? `<svg class="i flag" viewBox="0 0 24 24">${P.flagF}</svg>` : ''}
   </div>`;
   if (o.noSwipe) return inner;
   return `<div class="swipe"><div class="bgR">${I('check')} Готово</div><div class="bgL">Удалить ${I('trash')}</div>${inner}</div>`;
+}
+function subList(t, o) {
+  if (!t.subtasks.length || t.done || o.compact) return '';
+  const n = t.subtasks.filter(x => x.done).length, open = ui.subOpen?.[t.id], max = 6;
+  const shown = open ? t.subtasks : t.subtasks.slice(0, max);
+  return `<div class="subl"><div class="sbar"><i style="width:${n / t.subtasks.length * 100}%"></i></div>`
+    + shown.map(x => `<div class="st ${x.done ? 'done' : ''}"><button class="schk" data-act="subQuick" data-id="${t.id}" data-s="${x.id}" aria-label="Отметить подзадачу">${CHK}</button><span>${esc(x.title)}</span></div>`).join('')
+    + (t.subtasks.length > max && !open ? `<button class="smore" data-act="subMore" data-id="${t.id}">ещё ${t.subtasks.length - max}</button>` : '') + `</div>`;
 }
 function groupHtml(key, title, items, o = {}) {
   if (!items.length) return '';
@@ -1526,7 +1546,9 @@ const ACT = {
   dDue: a => { const t = task(ui.sheet.id); t.due = a.dataset.v || null; if (!t.due) t.time = null; delete S.notified[t.id]; save(); renderDetail(); render(); },
   dPrio: a => { task(ui.sheet.id).priority = +a.dataset.p; save(); renderDetail(); render(); },
   dStatus: a => { const t = task(ui.sheet.id); if (t.done) { t.done = false; t.doneAt = null; } t.status = a.dataset.s; save(); renderDetail(); render(); },
-  subToggle: a => { const t = task(ui.sheet.id), s = t.subtasks.find(x => x.id === a.dataset.s); s.done = !s.done; buzz(); save(); renderDetail(); render(); },
+  subToggle: a => { const t = task(ui.sheet.id); flipSub(t, a.dataset.s); setTimeout(renderDetail, 300); renderDetail(); },
+  subQuick: a => flipSub(task(a.dataset.id), a.dataset.s, a.closest('.st')),
+  subMore: a => { ui.subOpen = { ...(ui.subOpen || {}), [a.dataset.id]: 1 }; render(); },
   subDel: a => { const t = task(ui.sheet.id); t.subtasks = t.subtasks.filter(x => x.id !== a.dataset.s); save(); renderDetail(); render(); },
   dDup: () => { const t = task(ui.sheet.id); const c = { ...JSON.parse(JSON.stringify(t)), id: uid(), createdAt: Date.now(), done: false, doneAt: null, pomos: 0, title: t.title + ' (копия)' }; S.tasks.push(c); save(); render(); openTask(c.id); toast('Задача продублирована'); },
   dDel: () => { const id = ui.sheet.id; closeSheet(true); deleteTask(id); },
@@ -1591,6 +1613,16 @@ document.addEventListener('click', e => {
   const f = ACT[a.dataset.act]; if (f) { e.preventDefault(); f(a, e); }
 }, true);
 
+// отметить подзадачу; если все готовы — выполняем и саму задачу
+function flipSub(t, sid, el) {
+  if (!t) return; const s = t.subtasks.find(x => x.id === sid); if (!s) return;
+  snap(); s.done = !s.done; buzz();
+  if (el) el.classList.toggle('done', s.done);
+  save();
+  if (s.done && !t.done && t.subtasks.every(x => x.done)) {
+    setTimeout(() => { toggleTask(t.id, $(`main .task[data-id="${t.id}"]`)); toast('Все подзадачи готовы — задача выполнена', true); }, 250);
+  } else setTimeout(render, el ? 180 : 0);
+}
 /* ================= swipe gestures (iPhone) ================= */
 let sw = null;
 document.addEventListener('touchstart', e => {
